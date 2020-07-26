@@ -162,61 +162,51 @@ def get_status_cards():
     )
     return status_cards
 def get_tests_vs_positive_data():
-    last_day_1 = (date.today()  - timedelta(days = 1)).strftime('%d/%m/%Y') 
-    last_day_2 = (date.today()  - timedelta(days = 2)).strftime('%d/%m/%Y') 
-    filtered_data_1 = test_data[test_data['Updated On'] == last_day_1]
-    filtered_data_2 = test_data[test_data['Updated On'] == last_day_2]
-    state_list = []
-    no_of_tests = []
-    positive_cases = []
+    daily_test_url = 'https://api.covid19india.org/csv/latest/tested_numbers_icmr_data.csv'
+    daily_test_data = pd.read_csv (daily_test_url)
+    sample_daily_test_data = daily_test_data.tail(14)
+    sample_case_data = case_file.tail(14)
     positivity_rate = []
-    df_columns = filtered_data_1.values
+    no_of_tests = []
     counter = 0
-    for index, row in filtered_data_1.iterrows():
-        state_list.append(row["State"])
-        no_of_tests.append((row["Total Tested"] - filtered_data_2[filtered_data_2['State'] == row['State']]["Total Tested"].values[0]))
-        positive_cases.append(row["Positive"] - filtered_data_2[filtered_data_2['State'] == row['State']]["Positive"].values[0])
-        positivity_rate.append((positive_cases[counter]/no_of_tests[counter])*100)
+    for index, row in sample_case_data.iterrows():
+        no_of_tests.append(sample_daily_test_data.values[counter][6])
+        positivity_rate.append(round((sample_case_data.values[counter][1]/int(sample_daily_test_data.values[counter][6])*100),2))
         counter += 1
-    graph_data = {'State': state_list,
-        'Total Tested': no_of_tests,
-        'Positive': positive_cases,
+    graph_data = {'Date': sample_case_data['Date'],
+        'Number Of Tests': no_of_tests,
+        'Positive': sample_case_data['Daily Confirmed'],
         'Positivity Rate': positivity_rate
         }
 
-    df = pd.DataFrame (graph_data, columns = ['State','Total Tested','Positive','Positivity Rate'])
-    df = df.sort_values(by=['Total Tested'])
+    df = pd.DataFrame (graph_data, columns = ['Date','Number Of Tests','Positive','Positivity Rate'])
     return df
 
 def get_tests_vs_positive_graph():
-    # Create figure with secondary y-axis
-    df = get_tests_vs_positive_data()
+   # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-    
+    df = get_tests_vs_positive_data()
     fig.add_trace(go.Bar(
-        x=df['State'], 
+        x=df["Date"], 
         y=df['Positive'],
         name="Positive Cases",
         marker={'color': 'yellow'}
     ), secondary_y=False)
 
-    
     fig.add_trace(go.Bar(
-        x=df['State'], 
-        y=df['Total Tested'],
-        name="Daily Tests",
+        x=df["Date"], 
+        y=df['Number Of Tests'],
+        name="Number of tests",
         marker={'color': 'blue'}
     ), secondary_y=False)
 
 
-
     # Add traces
     fig.add_trace(go.Scatter(
-    x=df['State'],
+    x=df['Date'],
     y=df['Positivity Rate'],
     mode="lines",
-    name="Positivity Rate",
+    name="Positivity Rate (in %)",
     line_color='tomato'
     ), secondary_y=True)
 
@@ -230,13 +220,51 @@ def get_tests_vs_positive_graph():
             r=50,
             t=100,
             pad=10),
-         hovermode="x unified")
+         hovermode="x unified",
+        )
     return fig
+def get_death_rate_data():
+    state_wise_daily_url = 'https://api.covid19india.org/csv/latest/state_wise_daily.csv'
+    state_wise_daily_data = pd.read_csv (state_wise_daily_url)
+    state_wise_daily_data = state_wise_daily_data[state_wise_daily_data['Status'] == 'Deceased']
+    state_wise_daily_data = state_wise_daily_data.drop(['TT','DD'], axis=1)
+    return state_wise_daily_data
+    
+def get_state_code_list():
+    state_wise_url = 'https://api.covid19india.org/csv/latest/state_wise.csv'
+    state_wise_data = pd.read_csv(state_wise_url)
+    state_code_list = state_wise_data[['State','State_code']][1:]
+    return state_code_list
+
+def get_death_rate_graph():
+    state_wise_daily_data = get_death_rate_data()
+    state_code = list(state_wise_daily_data.columns[2:])
+    state_code_list = get_state_code_list()
+    data = []
+    for i in state_code:
+        data.append(go.Scatter(x=state_wise_daily_data['Date'], y=state_wise_daily_data[i], mode="lines",
+                               name=state_code_list[state_code_list['State_code']==i]['State'].values[0]))
+
+    fig = go.Figure(data=data)
+    fig.update_layout(title = "Death Rate",
+        autosize=True,
+       # width=800,
+       # height=500
+        margin=dict(
+            l=50,
+            r=50,
+            t=100,
+            pad=10),
+         
+        )
+    return fig
+
+
 app.layout = dbc.Container(children=[
     dbc.Alert(get_death_rate(), color="danger",style={'text-align':'center','width':'100'},
     className="p-5"),
     html.Div(get_status_cards()),
-     html.Div([dbc.Row(
+    html.Div([dbc.Row(
         [
             dbc.Col(dcc.Graph(figure = get_covid_status_graph(),
                    config={'displayModeBar': False}),)
@@ -249,9 +277,15 @@ app.layout = dbc.Container(children=[
                               config={'displayModeBar': False}),),
         ],
         className="mb-4",
+    ),
+                    dbc.Row(
+        [
+            dbc.Col(dcc.Graph(figure = get_death_rate_graph(),
+                              config={'displayModeBar': False}),),
+        ],
+        className="mb-4",
     )
              ])
-]
-)
+])
 if __name__ == '__main__':
     app.run_server(debug=True)
