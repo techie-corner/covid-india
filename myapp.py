@@ -154,9 +154,9 @@ def get_status_cards():
     ]
     status_cards = dbc.Row(
         [
-            dbc.Col(dbc.Card(card_content_confirmed, color="warning", inverse=True)),
+            dbc.Col(dbc.Card(card_content_confirmed, color="danger", inverse=True)),
             dbc.Col(dbc.Card(card_content_recovered, color="success",  inverse=True)),
-            dbc.Col(dbc.Card(card_content_deceased, color="danger",  inverse=True)),
+            dbc.Col(dbc.Card(card_content_deceased, color="secondary",  inverse=True)),
         ],
         className="mb-4",
     )
