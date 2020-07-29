@@ -20,6 +20,9 @@ target_url = 'https://api.covid19india.org/csv/latest/case_time_series.csv'
 case_file = pd.read_csv (target_url)
 test_file_location = "https://api.covid19india.org/csv/latest/statewise_tested_numbers_data.csv"
 test_data = pd.read_csv(test_file_location)
+state_wise_daily_url = 'https://api.covid19india.org/csv/latest/state_wise_daily.csv'
+state_wise_daily_data = pd.read_csv (state_wise_daily_url)
+
 def get_death_rate():
     total_days = (len(case_file)*24*60*60)
     total_deaths = case_file['Daily Deceased'].sum()
@@ -223,12 +226,17 @@ def get_tests_vs_positive_graph():
          hovermode="x unified",
         )
     return fig
-def get_death_rate_data():
-    state_wise_daily_url = 'https://api.covid19india.org/csv/latest/state_wise_daily.csv'
-    state_wise_daily_data = pd.read_csv (state_wise_daily_url)
-    state_wise_daily_data = state_wise_daily_data[state_wise_daily_data['Status'] == 'Deceased']
-    state_wise_daily_data = state_wise_daily_data.drop(['TT','DD'], axis=1)
-    return state_wise_daily_data
+def get_death_data():
+    state_wise_deceased_data = state_wise_daily_data[state_wise_daily_data['Status'] == 'Deceased']
+    state_wise_deceased_data = state_wise_deceased_data.drop(['TT','DD'], axis=1)
+    state_wise_deceased_data = state_wise_deceased_data.reset_index()
+    return state_wise_deceased_data
+
+def get_confirmed_data():
+    state_wise_confirmed_data = state_wise_daily_data[state_wise_daily_data['Status'] == 'Confirmed']
+    state_wise_confirmed_data = state_wise_confirmed_data.drop(['TT','DD'], axis=1)
+    state_wise_confirmed_data = state_wise_confirmed_data.reset_index()
+    return state_wise_confirmed_data
     
 def get_state_code_list():
     state_wise_url = 'https://api.covid19india.org/csv/latest/state_wise.csv'
@@ -236,29 +244,150 @@ def get_state_code_list():
     state_code_list = state_wise_data[['State','State_code']][1:]
     return state_code_list
 
-def get_death_rate_graph():
-    state_wise_daily_data = get_death_rate_data()
-    state_code = list(state_wise_daily_data.columns[2:])
+def get_death_rate_data():
+    state_wise_deceased_data = get_death_data()
+    state_wise_confirmed_data = get_confirmed_data()
+    #number of biweekly chunks required
+    n = int(state_wise_deceased_data.shape[0]/14)
+    data = {'Days Interval': [0]
+       }
+    data_set = pd.DataFrame(data) 
     state_code_list = get_state_code_list()
+    for i in state_code_list['State_code']:
+        data_set[i] = 'Nan'
+    # a period of 2 weeks
+    lower_limit = 0
+    upper_limit = 13
+    state_wise_death_rate = {}
+    for i in range(n+1):
+        row = [upper_limit + 1]
+        total_confirmed_cases_biweekly = state_wise_confirmed_data.loc[lower_limit:upper_limit].sum()
+        total_deceased_cases_biweekly = state_wise_deceased_data.loc[lower_limit:upper_limit].sum()
+        for i in state_code_list['State_code']:
+            if total_confirmed_cases_biweekly[i] == 0:
+                state_wise_death_rate[i] = 0
+            else:
+                state_wise_death_rate[i] = round((total_deceased_cases_biweekly[i]/total_confirmed_cases_biweekly[i])*100,2)
+            row.append(state_wise_death_rate[i])
+        data_set.loc[len(data_set)] = row
+        lower_limit =upper_limit + 1
+        upper_limit += 14
+    row = [upper_limit + 1]
+    row += ['Nan']*37
+    data_set.loc[len(data_set)] = row
+    return data_set
+
+def get_death_rate_graph():
     data = []
-    for i in state_code:
-        data.append(go.Scatter(x=state_wise_daily_data['Date'], y=state_wise_daily_data[i], mode="lines",
+    state_code_list = get_state_code_list()
+    data_set = get_death_rate_data()
+    for i in state_code_list['State_code']:
+        data.append(go.Scatter(x=data_set['Days Interval'], y=data_set[i], mode="lines",
                                name=state_code_list[state_code_list['State_code']==i]['State'].values[0]))
 
     fig = go.Figure(data=data)
-    fig.update_layout(title = "Death Rate",
-        autosize=True,
-       # width=800,
-       # height=500
-        margin=dict(
-            l=50,
-            r=50,
-            t=100,
-            pad=10),
-         
+
+    # Suffix y-axis tick labels with % sign
+    fig.update_yaxes(ticksuffix="%")
+    fig.update_xaxes(tick0=0, dtick=14)
+
+    fig.update_layout(
+        title={
+            'text': "Death Rate - State wise overview",
+            'y':0.9,
+            'x':0.3,
+            'xanchor': 'center',
+            'yanchor': 'top'},
+
+        xaxis_title="No Of Days",
+        yaxis_title="Death rate",
+        legend_title="States",
+        hovermode = "x",
+        font=dict(
+            family="Courier New, monospace",
+            size=15,
+            color="RebeccaPurple"
         )
+    )
+
     return fig
 
+def get_tpm_cpm_data():
+    test_data['Case Per Million'] = round((test_data['Positive']/(test_data['Population NCP 2019 Projection']/1000000)))
+    group_data = test_data.groupby('State')
+    return group_data
+
+def get_tpm_cpm_graph():
+    data = []
+    group_data = get_tpm_cpm_data()
+    for i in group_data.groups.keys():
+
+        data.append(go.Scatter(x=group_data.get_group(i)['Case Per Million'], 
+                               y=group_data.get_group(i)['Tests per million'], mode="lines",
+                               name=i))
+
+    fig = go.Figure(data=data)
+
+
+    fig.update_layout(
+        title={
+            'text': "Test Per Million v/s Case Per Million",
+            'y':0.9,
+            'x':0.3,
+            'xanchor': 'center',
+            'yanchor': 'top'},
+
+        xaxis_title="Case Per Million",
+        yaxis_title="Test per million",
+        legend_title="States",
+        font=dict(
+            family="Courier New, monospace",
+            size=15,
+            color="RebeccaPurple"
+        )
+    )
+    
+    return fig
+
+def get_test_per_positive_data():
+    last_updated_date = state_wise_daily_data.tail(1)['Date']
+    date_time_obj = datetime. strptime(last_updated_date.values[0], '%d-%b-%y')
+    last_updated_date = (date_time_obj + timedelta(days = 1)).strftime('%d-%b-%y')
+    filtered_data = test_data[test_data['Updated On'] <= last_updated_date][['State','Tests per positive case']]
+    test_per_positive_data = filtered_data.groupby('State')
+    return test_per_positive_data
+
+def get_fatality_test_per_positive_graph():
+    data = []
+    cum_deceased_data = get_death_data().cumsum()
+    cum_confirmed_data = get_confirmed_data().cumsum()
+    test_per_positive_data = get_test_per_positive_data()
+    state_code_list = get_state_code_list()
+    for i in test_per_positive_data.groups.keys():
+        test_per_confirmed = test_per_positive_data.get_group(i).tail(30)
+        state_code = state_code_list[state_code_list['State']==i]['State_code'].values[0]
+        fatality_rate = ((cum_deceased_data[state_code]/cum_confirmed_data[state_code])*100).tail(30)
+        data.append(go.Scatter(x=test_per_confirmed['Tests per positive case'], 
+                           y=fatality_rate, mode="lines",
+                           name=i))
+
+    fig = go.Figure(data=data)
+    fig.update_yaxes(ticksuffix="%")
+
+    fig.update_layout(
+        title={
+            'text': "Case Fatality Rate v/s Test Per Positive Case",
+            'y':0.9,
+            'x':0.3,
+            'xanchor': 'center',
+            'yanchor': 'top'},
+
+        xaxis_title="Test per positive case",
+        yaxis_title="Case fatality rate",
+        legend_title="States",
+
+    )
+    return fig
 
 app.layout = dbc.Container(children=[
     dbc.Alert(get_death_rate(), color="danger",style={'text-align':'center','width':'100'},
@@ -281,6 +410,21 @@ app.layout = dbc.Container(children=[
                     dbc.Row(
         [
             dbc.Col(dcc.Graph(figure = get_death_rate_graph(),
+                              config={'displayModeBar': False}),),
+        ],
+        className="mb-4",
+    ),
+              
+                    dbc.Row(
+        [
+            dbc.Col(dcc.Graph(figure = get_tpm_cpm_graph(),
+                              config={'displayModeBar': False}),),
+        ],
+        className="mb-4",
+    ),
+               dbc.Row(
+        [
+            dbc.Col(dcc.Graph(figure = get_fatality_test_per_positive_graph(),
                               config={'displayModeBar': False}),),
         ],
         className="mb-4",
