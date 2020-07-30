@@ -121,6 +121,23 @@ def get_daily_data():
     daily_data = case_file.tail(1)
     return daily_data[["Daily Confirmed","Daily Recovered","Daily Deceased"]]
 
+def get_cumulative_status_data():
+    cumulative_data = case_file.tail(1)
+    return cumulative_data[["Total Confirmed","Total Recovered","Total Deceased"]]
+
+def get_total_death_data():
+    return get_cumulative_status_data()["Total Deceased"].values[0]
+
+def get_total_recovered_data():
+    return get_cumulative_status_data()["Total Recovered"].values[0]
+
+def get_total_confirmed_data():
+    return get_cumulative_status_data()["Total Confirmed"].values[0]
+
+def get_total_active_data():
+    return (get_total_confirmed_data() - (get_total_recovered_data() + get_total_death_data()))
+        
+
 def get_status_cards():
     card_content_confirmed = [
         dbc.CardHeader("Confirmed"),
@@ -155,15 +172,73 @@ def get_status_cards():
             ]
         ),
     ]
-    status_cards = dbc.Row(
+    card_content_total_death = [
+        dbc.CardHeader("Total Deceased"),
+        dbc.CardBody(
+            [
+                html.P(
+                    get_total_death_data(),
+                    className="card-text",
+                ),
+            ]
+        ),
+    ]
+    card_content_total_recovered = [
+        dbc.CardHeader("Total Recovered"),
+        dbc.CardBody(
+            [
+                html.P(
+                    get_total_recovered_data(),
+                    className="card-text",
+                ),
+            ]
+        ),
+    ]
+                                         
+    card_content_total_confirmed = [
+        dbc.CardHeader("Total Confirmed"),
+        dbc.CardBody(
+            [
+                html.P(
+                    get_total_confirmed_data(),
+                    className="card-text",
+                ),
+            ]
+        ),
+    ]
+                                         
+    card_content_total_active = [
+        dbc.CardHeader("Active"),
+        dbc.CardBody(
+            [
+                html.P(
+                    get_total_active_data(),
+                    className="card-text",
+                ),
+            ]
+        ),
+    ]
+    status_cards = [dbc.Row(
         [
             dbc.Col(dbc.Card(card_content_confirmed, color="danger", inverse=True)),
             dbc.Col(dbc.Card(card_content_recovered, color="success",  inverse=True)),
             dbc.Col(dbc.Card(card_content_deceased, color="secondary",  inverse=True)),
         ],
         className="mb-4",
-    )
+    ),
+    dbc.Row(
+        [
+            dbc.Col(dbc.Card(card_content_total_confirmed, color="danger",  inverse=True)),
+            dbc.Col(dbc.Card(card_content_total_active, color="info",  inverse=True)),
+            dbc.Col(dbc.Card(card_content_total_recovered, color="success",  inverse=True)),
+            dbc.Col(dbc.Card(card_content_total_death, color="secondary",  inverse=True)),
+        ],
+        className="mb-4",
+    )]
+                                         
     return status_cards
+
+
 def get_tests_vs_positive_data():
     daily_test_url = 'https://api.covid19india.org/csv/latest/tested_numbers_icmr_data.csv'
     daily_test_data = pd.read_csv (daily_test_url)
@@ -313,8 +388,11 @@ def get_death_rate_graph():
     return fig
 
 def get_tpm_cpm_data():
-    test_data['Case Per Million'] = round((test_data['Positive']/(test_data['Population NCP 2019 Projection']/1000000)))
-    group_data = test_data.groupby('State')
+    last_day_1 = (date.today()  - timedelta(days = 1)).strftime('%d-%m-%Y')
+    test_data1 = test_data[test_data['Updated On'] < last_day_1]
+    #test_data = test_data[test_data['Updated On'] < last_day_1]
+    test_data1['Case Per Million'] = round((test_data1['Positive']/(test_data1['Population NCP 2019 Projection']/1000000)))
+    group_data = test_data1.groupby('State')
     return group_data
 
 def get_tpm_cpm_graph():
@@ -349,6 +427,46 @@ def get_tpm_cpm_graph():
     
     return fig
 
+def get_tpm_cpm_table():
+    #table
+    table_data = {'State': {},
+                  'Test Per Million':{},
+                  'Case Per Million':{}
+           }
+    data_table = pd.DataFrame(table_data) 
+    group_data = get_tpm_cpm_data()
+    for i in group_data.groups.keys():
+        row = [i,group_data.get_group(i)['Tests per million'].tail(1).values[0],group_data.get_group(i)['Case Per Million'].tail(1).values[0]]
+        data_table.loc[len(data_table)] = row
+    return data_table
+def get_tpm_cpm_combined():
+    
+    card = dbc.Card(
+        [
+            dbc.CardHeader(
+                dbc.Tabs(
+                    [
+                       dcc.Tab(label='Graph', children=[
+                                dcc.Graph(
+                                    figure = get_tpm_cpm_graph(),
+                                  config={'displayModeBar': False})
+                            ]),
+                        dcc.Tab(label='Table', children=[
+                                dbc.Table.from_dataframe(get_tpm_cpm_table(), striped=True, bordered=True, hover=True)
+                            ]),
+                        #dbc.Tab(label="Tab 2", tab_id="tab-2"),
+                    ],
+                    id="card-tabs",
+                    card=True,
+                    
+                )
+            ),
+            dbc.CardBody(html.P(id="card-content", className="card-text")),
+        ]
+    )
+    
+    return card
+
 def get_test_per_positive_data():
     last_updated_date = state_wise_daily_data.tail(1)['Date']
     date_time_obj = datetime. strptime(last_updated_date.values[0], '%d-%b-%y')
@@ -358,7 +476,18 @@ def get_test_per_positive_data():
     return test_per_positive_data
 
 def get_fatality_test_per_positive_graph():
-    data = []
+    #table
+    table_data = {'State': {},
+                  'Fatality Rate':{},
+                  'Test Per Positive Case':{}
+           }
+    data_table = pd.DataFrame(table_data)
+    data=[]
+    fig = make_subplots(
+    rows=1, cols=2,
+    vertical_spacing=0.3,
+    specs=[[{"type": "scatter"},{"type": "table"}]]
+    )
     cum_deceased_data = get_death_data().cumsum()
     cum_confirmed_data = get_confirmed_data().cumsum()
     test_per_positive_data = get_test_per_positive_data()
@@ -367,11 +496,16 @@ def get_fatality_test_per_positive_graph():
         test_per_confirmed = test_per_positive_data.get_group(i).tail(30)
         state_code = state_code_list[state_code_list['State']==i]['State_code'].values[0]
         fatality_rate = ((cum_deceased_data[state_code]/cum_confirmed_data[state_code])*100).tail(30)
-        data.append(go.Scatter(x=test_per_confirmed['Tests per positive case'], 
+        fig.add_trace(go.Scatter(x=test_per_confirmed['Tests per positive case'], 
                            y=fatality_rate, mode="lines",
-                           name=i))
+                           name=i),row=1,col=1)
+        #table population
+        test_per_confirmed_latest = test_per_confirmed.tail(1).values[0][1]
+        #print(test_per_confirmed_latest)
+        fatality_rate_latest = round(fatality_rate.tail(1).values[0],2)
+        row = [i,fatality_rate_latest,test_per_confirmed_latest]
+        data_table.loc[len(data_table)] = row
 
-    fig = go.Figure(data=data)
     fig.update_yaxes(ticksuffix="%")
 
     fig.update_layout(
@@ -386,6 +520,18 @@ def get_fatality_test_per_positive_graph():
         yaxis_title="Case fatality rate",
         legend_title="States",
 
+    )
+    
+    fig.add_trace(go.Table(
+        header=dict(
+            values=data_table.columns,
+            font=dict(size=10),
+            align="left"
+        ),
+        cells=dict(
+            values=[data_table[k].tolist() for k in data_table.columns],
+            align = "left")
+    ),row=1,col=2
     )
     return fig
 
@@ -406,21 +552,21 @@ app.layout = dbc.Container(children=[
                               config={'displayModeBar': False}),),
         ],
         className="mb-4",
-    ),
+    ),  
                     dbc.Row(
-        [
+        [           
             dbc.Col(dcc.Graph(figure = get_death_rate_graph(),
                               config={'displayModeBar': False}),),
         ],
         className="mb-4",
-    ),
+    ),dbc.Row(
+             dbc.Col(html.H3("Test per million vs Case per million"))),
               
                     dbc.Row(
         [
-            dbc.Col(dcc.Graph(figure = get_tpm_cpm_graph(),
-                              config={'displayModeBar': False}),),
+            dbc.Col(get_tpm_cpm_combined(),),
         ],
-        className="mb-4",
+        className="mb-4,h-50",
     ),
                dbc.Row(
         [
@@ -429,7 +575,8 @@ app.layout = dbc.Container(children=[
         ],
         className="mb-4",
     )
-             ])
-])
+     ])
+]
+)
 if __name__ == '__main__':
     app.run_server(debug=True)
