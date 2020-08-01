@@ -8,30 +8,14 @@ import dash_core_components as dcc
 import dash_html_components as html
 import dash_bootstrap_components as dbc
 import dash_html_components as html
+import dash_gif_component as gif
 
 from datetime import date 
 from datetime import datetime
 from datetime import timedelta
 
-app = dash.Dash(__name__,external_stylesheets=[dbc.themes.BOOTSTRAP])
+app = dash.Dash(__name__,title="Covid in India",external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
-
-
-
-SIDEBAR_STYLE = {
-    "position": "fixed",
-    "top": 0,
-    "left": 0,
-    "bottom": 0,
-    "width": "16rem",
-    "padding": "2rem 1rem",
-    "background-color": "#f8f9fa",
-}
-
-CONTENT_STYLE = {
-    "margin-left": "8rem",
-    "padding": "2rem 1rem",
-}
 
 mini_container = {
     "border-radius": "5px",
@@ -40,7 +24,7 @@ mini_container = {
     "padding": "15px",
     "position": "relative",
     "box-shadow": "2px 2px 2px lightgrey",
-}
+    }
 
 target_url = 'https://api.covid19india.org/csv/latest/case_time_series.csv'
 case_file = pd.read_csv (target_url)
@@ -126,16 +110,21 @@ def get_covid_status_graph():
     line_color='mediumaquamarine'
     ))
     fig.update_layout(
-    title = "Covid Status in India",
+    title={
+            'text': "Covid Status in India",
+            'y':0.9,
+            'x':0.3,
+            'xanchor': 'center',
+            'yanchor': 'top'},
     autosize=True,
    # width=800,
    # height=500,
     hovermode="x unified",
     margin=dict(
-        l=50,
+        l=10,
         r=20,
-        b=10,
-        t=50,
+        b=120,
+        t=100,
         pad=10),
 
     )
@@ -165,90 +154,78 @@ def get_total_active_data():
     
 def get_current_status_card():
     card_content_confirmed = [
-            dbc.CardHeader(html.H5("Confirmed"), className="bg-danger text-center"),
-            dbc.CardBody(
-                [
-                    html.P(
+            html.Div(
+                [	html.H6("Confirmed",className="text-center"),
+                    html.Div(
                         "{0:n}".format(get_daily_data()["Daily Confirmed"].values[0]),
                         className="card-text text-center",
                     ),
-                ],className="w-10"
+                ],className="w-30",style={"background-color":"#ffd6cc","border-radius": "10px",
+                						 "box-shadow": "2px 2px 2px lightgrey"}
             )
         ]
     card_content_recovered = [
-            dbc.CardHeader(html.H5("Recovered"),className="bg-success text-center"),
-            dbc.CardBody(
+            html.Div(
                 [
+                	html.H6("Recovered",className="text-center"),
                     html.P(
                         "{0:n}".format(get_daily_data()["Daily Recovered"].values[0]),
                         className="card-text text-center",
                     ),
-                ],className="w-10"
+                ],className="w-10",style={"background-color":"#d9f2d9","border-radius": "10px", 
+                						 "box-shadow": "2px 2px 2px lightgrey"}
             )
         ]
     card_content_deceased = [
-            dbc.CardHeader(html.H5("Deceased"), className="bg-secondary text-center"),
-            dbc.CardBody(
-                [
+            html.Div(
+                [	html.H6("Deceased",className="text-center"),
                     html.P(
                         "{0:n}".format(get_daily_data()["Daily Deceased"].values[0]),
                         className="card-text text-center",
                     ),
-                ],className="w-10"
+                ],className="w-10",style={"background-color":"#d9d9d9", "border-radius": "10px",
+                						  "box-shadow": "2px 2px 2px lightgrey"}
             )
         ]
     
     current_status_arrange = [dbc.Row(
         [
-            dbc.Col(dbc.Card(card_content_confirmed, color="danger", outline = True,)),
-            dbc.Col(dbc.Card(card_content_recovered, color="success", outline = True,)),
-            dbc.Col(dbc.Card(card_content_deceased, color="secondary",outline = True,)),
+            dbc.Col(dbc.Card(card_content_confirmed,)),
+            dbc.Col(dbc.Card(card_content_recovered,)),
+            dbc.Col(dbc.Card(card_content_deceased,)),
         ],
         className="mb-4"
     ),         
     ]
     card_current_status = [
             dbc.CardBody(
-                [
-                    html.P(
-                       current_status_arrange
-                    ),
-                ]
+                 current_status_arrange
             ),
 
             ]
         
     return card_current_status
 
+
 def get_overall_status_card():
     
     return html.Div(children=[
-        dbc.Row([
-            
-            dbc.Col(html.Div([
-           html.H6("Total Confirmed", className="text-danger text-center"),
-           html.P("{0:n}".format(get_total_confirmed_data()),className="text-danger text-center",)
-        ],style=mini_container,)),
-            
-            dbc.Col(html.Div([
-           html.H6("Active Cases", className="text-info text-center"),
-           html.P("{0:n}".format(get_total_death_data()),className="text-info text-center")
-        ],style=mini_container))
-        ]),
-         dbc.Row([
-             dbc.Col(html.Div([
-           html.H6("Total Recovered",className="text-success text-center"),
-           html.P("{0:n}".format(get_total_death_data()),className="text-success text-center")
-        ],style=mini_container),),
-             
-            dbc.Col(html.Div([
-           html.H6("Total Deceased",className="text-muted text-center"),
-           html.P("{0:n}".format(get_total_death_data()),className="text-muted text-center")
-        ],style=mini_container),)
-             
-        ])
-     ])
+    	html.Div([html.H6("Total Confirmed", className="text-danger text-center"),
+           		html.P("{0:n}".format(get_total_confirmed_data()),className="text-danger text-center",)],
+           		className="mini_container",),
 
+    	html.Div([html.H6("Active Cases", className="text-info text-center"),
+           		html.P("{0:n}".format(get_total_active_data()),className="text-info text-center")],
+           		className="mini_container",),
+
+    	html.Div([html.H6("Total Recovered", className="text-success text-center"),
+           		html.P("{0:n}".format(get_total_recovered_data()),className="text-success text-center")],
+           		className="mini_container",),
+
+    	html.Div([html.H6("Total Deceased",className="text-muted text-center"),
+           		html.P("{0:n}".format(get_total_death_data()),className="text-muted text-center")],
+           		className="mini_container",),
+   		],className="four columns")
 
 
 def get_tests_vs_positive_data():
@@ -548,7 +525,7 @@ def get_fatality_test_per_positive_graph():
     return fig
 
 sidebar = html.Div(
-    [
+    children=[
         html.H2("Explore", className="display-4"),
         html.Hr(),
         dbc.Nav(
@@ -562,64 +539,51 @@ sidebar = html.Div(
             vertical=True,
             pills=True,
         ),
-    ],
-    style = SIDEBAR_STYLE
+    ],className='sidebar_style'
 )
 
 
 
-app.layout = dbc.Container(children=[dcc.Location(id="url"),
-    html.Div([
-    dbc.Alert(get_death_rate(), color="danger",style={'text-align':'center','width':'100'},
-    className="p-5"),
-    html.Div(get_current_status_card(),id="status"),
-    html.Div(dbc.Row(
-        [
-            dbc.Col(get_overall_status_card(),width = 4,),
-            dbc.Col(dcc.Graph(figure = get_covid_status_graph(),
-                   config={'displayModeBar': False,}))
-        ],
-        className="mb-4",
-    ),id = "covid-status"),
-    html.Div(
-             dbc.Row(
-        [
-            dbc.Col(dcc.Graph(figure = get_tests_vs_positive_graph(),
-                              config={'displayModeBar': False}),),
-        ],
-        className="mb-4",
-    ), id = 'test-positivity'),
-        
-    html.Div([dbc.Row(
-             dbc.Col(html.H3("Test per million vs Case per million"))),
-              
-                    dbc.Row(
-        [
-            dbc.Col(get_tpm_cpm_combined(),),
-        ],
-        className="mb-5,h-50",
-    )],id="tpm-cpm"),
-        
-    html.Div(
-                    dbc.Row(
-        [           
-            dbc.Col(dcc.Graph(figure = get_death_rate_graph(),
-                              config={'displayModeBar': False},animate=True),),
-        ],
-        className="mb-4",
-    ),id="death-rate"),
-    
-    html.Div(
-               dbc.Row(
-        [
-            dbc.Col(dcc.Graph(figure = get_fatality_test_per_positive_graph(),
-                              config={'displayModeBar': False},animate=True)),
-        ],
-        className="mb-4",
-    ),id="fatality"
-    )],id="content",style=CONTENT_STYLE),
-    sidebar,]
+app.layout = html.Div([
+		html.Div(sidebar,),
+    	html.Div([
+	    dbc.Alert([html.B(get_death_rate()),
+	    	gif.GifPlayer(
+	        gif='assets/timer.gif',
+	        still='assets/timer-image.png',
+	        autoplay= True),], color="danger",
+	    className="p-5 text-center",style={"font-size":"large","border-radius": "7px"}),
+	    html.Div(get_current_status_card(),id="status",),
+	   	html.Div([
+	   	dbc.Row([
+	   	dbc.Col(html.Div(get_overall_status_card()),width="50%"),
+	   	dbc.Col(html.Div([dcc.Graph(figure = get_covid_status_graph(),
+	                   config={'displayModeBar': False,}),
+	   	html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
+	   		,style={"padding":"20px","font-size":"large"})]
+	   	))],className="mb-4"),],className="pretty_container"),
 
+	    html.Div(
+	            dcc.Graph(figure = get_tests_vs_positive_graph(),
+	                              config={'displayModeBar': False}),
+	            id = 'test-positivity',className="pretty_container"),
+	        
+	    html.Div(
+	            get_tpm_cpm_combined(),
+	            id="tpm-cpm",className="pretty_container"),
+	        
+	    html.Div(dcc.Graph(figure = get_death_rate_graph(),
+	                              config={'displayModeBar': False},animate=True),
+	    className="pretty_container"),
+	    
+	    html.Div(
+	    	dcc.Graph(figure = get_fatality_test_per_positive_graph(),
+	                              config={'displayModeBar': False},animate=True),
+	    	className="pretty_container",id="fatality"),
+	    ],className="pretty_container content_style",),
+
+	   ],id="mainContainer", style={"display": "flex", "flex-direction": "column"},
 )
+
 if __name__ == '__main__':
     app.run_server(debug=True)
