@@ -14,6 +14,9 @@ from datetime import date
 from datetime import datetime
 from datetime import timedelta
 
+import math
+import locale
+
 app = dash.Dash(__name__,title="Covid in India",external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
 
@@ -37,10 +40,17 @@ def get_death_rate():
     total_days = (len(case_file)*24*60*60)
     total_deaths = case_file['Daily Deceased'].sum()
     death_rate = total_days/total_deaths
-    minutes = int(death_rate/60)
-    seconds = int(round(death_rate%60,0))
-    return 'Someone is dying in every {} minutes and {} seconds in India!'.format(minutes, seconds)
-
+    minutes, sec = divmod(death_rate, 60) 
+    hour, minutes = divmod(minutes, 60)
+    alert_string = ''
+    if hour > 0:
+       alert_string += '{} hours '.format(int(hour))
+    elif minutes > 0:
+    	alert_string += '{} minutes '.format(int(minutes))
+    else:
+    	alert_string += '{} seconds'.format(int(sec))
+    return alert_string
+    
 def get_covid_status_graph():
     # Create traces
     fig = go.Figure()
@@ -49,7 +59,7 @@ def get_covid_status_graph():
     #Total Confirmed cases
     fig.add_trace(go.Scatter(x=case_file.Date, y=case_file["Total Confirmed"],
                     mode='lines',
-                    line_color='tomato',
+                    line_color='#e60000',
                     name='Total Confirmed'))
 
     #Total Active cases
@@ -57,8 +67,8 @@ def get_covid_status_graph():
                     mode='lines',
                     fill='tonexty',
                     name='Total Active',
-                    fillcolor = 'thistle',
-                    line_color='gold'))
+                    fillcolor = '#ffeee6',
+                    line_color='#993300'))
 
     #Total Recovered cases
     fig.add_trace(go.Scatter(x=case_file.Date, y=case_file["Total Recovered"],
@@ -83,7 +93,7 @@ def get_covid_status_graph():
     textposition="top center",
      hoverinfo='none',
     showlegend=False,
-    line_color='darkred'
+    line_color='#e60000'
     ))
 
     fig.add_trace(go.Scatter(
@@ -95,7 +105,7 @@ def get_covid_status_graph():
     textposition="top center",
      hoverinfo='none',
     showlegend=False,
-    line_color='palegreen'
+    line_color='#00b300'
     ))
 
     fig.add_trace(go.Scatter(
@@ -110,6 +120,9 @@ def get_covid_status_graph():
     line_color='mediumaquamarine'
     ))
     fig.update_layout(
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+    xaxis={"fixedrange": True},
     title={
             'text': "Covid Status in India",
             'y':0.9,
@@ -257,14 +270,14 @@ def get_tests_vs_positive_graph():
         x=df["Date"], 
         y=df['Positive'],
         name="Positive Cases",
-        marker={'color': 'yellow'}
+        marker={'color': '#ff704d'}
     ), secondary_y=False)
 
     fig.add_trace(go.Bar(
         x=df["Date"], 
         y=df['Number Of Tests'],
         name="Number of tests",
-        marker={'color': 'blue'}
+        marker={'color': '#8585ad'}
     ), secondary_y=False)
 
 
@@ -274,11 +287,12 @@ def get_tests_vs_positive_graph():
     y=df['Positivity Rate'],
     mode="lines",
     name="Positivity Rate (in %)",
-    line_color='tomato'
+    line_color='#ffbf00'
     ), secondary_y=True)
 
     # Change the bar mode
     fig.update_layout(barmode='stack',title = "Daily Tests vs Positive Cases",
+    	 xaxis={"fixedrange": True},
         autosize=True,
        # width=800,
        # height=500
@@ -305,7 +319,11 @@ def get_confirmed_data():
 def get_state_code_list():
     state_wise_url = 'https://api.covid19india.org/csv/latest/state_wise.csv'
     state_wise_data = pd.read_csv(state_wise_url)
+    state_wise_data.replace('Dadra and Nagar Haveli and Daman and Diu', 'DNHDD',inplace=True)
     state_code_list = state_wise_data[['State','State_code']][1:]
+    # index_pos = int(state_code_list[state_code_list['State_code']=='DN'].index[0])
+    # state_code_list.at[index_pos,'State'] = 'DN & DU'
+    # state_code_list.loc[state_code_list['State_code']=='DN']['State']
     return state_code_list
 
 def get_death_rate_data():
@@ -346,6 +364,9 @@ def get_death_rate_graph():
     state_code_list = get_state_code_list()
     data_set = get_death_rate_data()
     for i in state_code_list['State_code']:
+        if i == 'DN':
+        	index_pos = int(state_code_list[state_code_list['State_code']=='DN'].index[0])
+        	state_code_list.at[index_pos,'State']= 'DNHDD'
         data.append(go.Scatter(x=data_set['Days Interval'], y=data_set[i], mode="lines",
                                name=state_code_list[state_code_list['State_code']==i]['State'].values[0]))
 
@@ -356,13 +377,14 @@ def get_death_rate_graph():
     fig.update_xaxes(tick0=0, dtick=14)
 
     fig.update_layout(
-        title={
-            'text': "Death Rate - State wise overview",
-            'y':0.9,
-            'x':0.3,
-            'xanchor': 'center',
-            'yanchor': 'top'},
-
+        title="Death Rate - State wise overview",
+        xaxis={"fixedrange": True},
+        # {
+        #     'text': "Death Rate - State wise overview",
+        #     'y':0.9,
+        #     'x':1,
+        #     'xanchor': 'center',
+        #     'yanchor': 'top'},
         xaxis_title="No Of Days",
         yaxis_title="Death rate",
         legend_title="States",
@@ -377,41 +399,53 @@ def get_death_rate_graph():
     return fig
 
 def get_tpm_cpm_data():
-    last_day_1 = (date.today()  - timedelta(days = 1)).strftime('%d-%m-%Y')
-    test_data1 = test_data[test_data['Updated On'] < last_day_1]
-    #test_data = test_data[test_data['Updated On'] < last_day_1]
-    test_data1['Case Per Million'] = round((test_data1['Positive']/(test_data1['Population NCP 2019 Projection']/1000000)))
-    group_data = test_data1.groupby('State')
-    return group_data
+    # last_day_1 = (date.today()  - timedelta(days = 1)).strftime('%d-%m-%Y')
+    # test_data1 = test_data[test_data['Updated On'] < last_day_1]
+    # #test_data = test_data[test_data['Updated On'] < last_day_1]
+    # test_data1['Case Per Million'] = round((test_data1['Positive']/(test_data1['Population NCP 2019 Projection']/1000000)))
+    # test_data1['Test Per Million'] = round((test_data1['Total Tested']/(test_data1['Population NCP 2019 Projection']/1000000)))
+    test_data.drop(test_data[test_data['Updated On'] == date.today().strftime('%d/%m/%Y')].index, inplace = True)
+    test_data.replace('Dadra and Nagar Haveli and Daman and Diu', 'DNHDD',inplace=True) 
+    group_data = test_data.groupby('State')
+    population_dict = get_state_population(group_data)
+    return group_data, population_dict
+
+def get_state_population(group_data):
+	population_dict = {}
+	for i in group_data.groups.keys():
+		population_dict[i] = test_data[test_data['State']==i]['Population NCP 2019 Projection'].values[0]
+	return population_dict
 
 def get_tpm_cpm_graph():
     data = []
-    group_data = get_tpm_cpm_data()
+    state_code_list = get_state_code_list()
+    group_data, population_dict = get_tpm_cpm_data()
     for i in group_data.groups.keys():
-
-        data.append(go.Scatter(x=group_data.get_group(i)['Case Per Million'], 
-                               y=group_data.get_group(i)['Tests per million'], mode="lines",
-                               name=i))
+        data.append(go.Scatter(x=round(group_data.get_group(i)['Positive']/(population_dict[i]/1000000)), 
+                           y=round(group_data.get_group(i)['Total Tested']/(population_dict[i]/1000000)), mode="lines",
+                           name=i))
 
     fig = go.Figure(data=data)
 
 
     fig.update_layout(
-        title={
-            'text': "Test Per Million v/s Case Per Million",
-            'y':0.9,
-            'x':0.3,
-            'xanchor': 'center',
-            'yanchor': 'top'},
+        title= "Test Per Million v/s Case Per Million",
+        xaxis={"fixedrange": True},
+        # {
+        #     'text': "Test Per Million v/s Case Per Million",
+        #     'y':0.9,
+        #     'x':0.3,
+        #     'xanchor': 'center',
+        #     'yanchor': 'top'},
 
         xaxis_title="Case Per Million",
         yaxis_title="Test per million",
         legend_title="States",
-        font=dict(
-            family="Courier New, monospace",
-            size=15,
-            color="RebeccaPurple"
-        )
+        # font=dict(
+        #     family="Courier New, monospace",
+        #     size=15,
+        #     color="RebeccaPurple"
+        # )
     )
     
     return fig
@@ -423,9 +457,10 @@ def get_tpm_cpm_table():
                   'Case Per Million':{}
            }
     data_table = pd.DataFrame(table_data) 
-    group_data = get_tpm_cpm_data()
+    group_data,population_dict = get_tpm_cpm_data()
     for i in group_data.groups.keys():
-        row = [i,group_data.get_group(i)['Tests per million'].tail(1).values[0],group_data.get_group(i)['Case Per Million'].tail(1).values[0]]
+        row = [i,round(group_data.get_group(i)['Total Tested']/(population_dict[i]/1000000)).tail(1).values[0],
+          round(group_data.get_group(i)['Positive']/(population_dict[i]/1000000)).tail(1).values[0]]
         data_table.loc[len(data_table)] = row
     return data_table
 def get_tpm_cpm_combined():
@@ -483,6 +518,8 @@ def get_fatality_test_per_positive_graph():
     state_code_list = get_state_code_list()
     for i in test_per_positive_data.groups.keys():
         test_per_confirmed = test_per_positive_data.get_group(i).tail(30)
+        if i == 'Dadra and Nager Haveli and Daman and Diu':
+            i = 'DN & DU'
         state_code = state_code_list[state_code_list['State']==i]['State_code'].values[0]
         fatality_rate = ((cum_deceased_data[state_code]/cum_confirmed_data[state_code])*100).tail(30)
         fig.add_trace(go.Scatter(x=test_per_confirmed['Tests per positive case'], 
@@ -504,7 +541,7 @@ def get_fatality_test_per_positive_graph():
             'x':0.3,
             'xanchor': 'center',
             'yanchor': 'top'},
-
+        xaxis={"fixedrange": True},
         xaxis_title="Test per positive case",
         yaxis_title="Case fatality rate",
         legend_title="States",
@@ -526,7 +563,7 @@ def get_fatality_test_per_positive_graph():
 
 sidebar = html.Div(
     children=[
-        html.H2("Explore", className="display-4"),
+        html.H1("Explore", className="display-4"),
         html.Hr(),
         dbc.Nav(
             [
@@ -538,6 +575,7 @@ sidebar = html.Div(
             ],
             vertical=True,
             pills=True,
+            style={"font-size":"22px"}
         ),
     ],className='sidebar_style'
 )
@@ -547,38 +585,92 @@ sidebar = html.Div(
 app.layout = html.Div([
 		html.Div(sidebar,),
     	html.Div([
-	    dbc.Alert([html.B(get_death_rate()),
-	    	gif.GifPlayer(
-	        gif='assets/timer.gif',
-	        still='assets/timer-image.png',
-	        autoplay= True),], color="danger",
+	    dbc.Alert([html.B([
+	    	html.P(["Someone is dying in every",
+	    		html.Span(get_death_rate(),style={"font-size":"50px","padding-left":"5px","padding-right":"5px"}),"in India!",
+	    		]),
+	    	],className="text-danger",style={"font-size":"25px"}),], color="danger",
 	    className="p-5 text-center",style={"font-size":"large","border-radius": "7px"}),
 	    html.Div(get_current_status_card(),id="status",),
+
 	   	html.Div([
-	   	dbc.Row([
-	   	dbc.Col(html.Div(get_overall_status_card()),width="50%"),
+	   		 dbc.Card(
+        [
+        dbc.CardHeader("Covid Curve In India",style={"font-size":"30px"}),
+        dbc.CardBody(
+            [
+               	dbc.Row([
+	   	dbc.Col(html.Div(get_overall_status_card()),width="60%"),
 	   	dbc.Col(html.Div([dcc.Graph(figure = get_covid_status_graph(),
 	                   config={'displayModeBar': False,}),
 	   	html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
 	   		,style={"padding":"20px","font-size":"large"})]
-	   	))],className="mb-4"),],className="pretty_container"),
+	   	))],className="mb-4"),
+            ]
+        ),
+    ],
+    )
+	   ],id="covid-status"),
 
-	    html.Div(
-	            dcc.Graph(figure = get_tests_vs_positive_graph(),
+	   	html.Div([
+	   		
+	   		 dbc.Card(
+        [
+        dbc.CardHeader("Test Positivity",style={"font-size":"30px"}),
+        dbc.CardBody(
+            [
+               	dbc.Row([
+	   			dbc.Col(dcc.Graph(figure = get_tests_vs_positive_graph(),
 	                              config={'displayModeBar': False}),
-	            id = 'test-positivity',className="pretty_container"),
+	            ),
+	            dbc.Col(html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
+	   		,className="text_style"),className="center-container")
+	            ])
+            ]
+        ),
+    ],)
+	   		],id="test-positivity"),
+
+         
+	   	html.Div([
+
+	   		dbc.Card(
+        [
+        dbc.CardHeader("Test Efficiency",style={"font-size":"30px"}),
+        dbc.CardBody(
+            [
+               	dbc.Row(dbc.Col(html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
+	   		,className="text_style"))),
+	   		dbc.Row([
+	   		dbc.Col( get_tpm_cpm_combined(),
+	           ),
+	   		]),
+            ]
+        ),
+    ],)], id="tpm-cpm",),
 	        
-	    html.Div(
-	            get_tpm_cpm_combined(),
-	            id="tpm-cpm",className="pretty_container"),
-	        
-	    html.Div(dcc.Graph(figure = get_death_rate_graph(),
-	                              config={'displayModeBar': False},animate=True),
-	    className="pretty_container"),
+
+	    html.Div( dbc.Card(
+        [
+        dbc.CardHeader("Death Rate",style={"font-size":"30px"}),
+        dbc.CardBody(
+            [
+               	dbc.Row([
+	   			dbc.Col(dcc.Graph(figure = get_death_rate_graph(),
+	                              config={'displayModeBar': False}),
+	   			),
+	            dbc.Col(html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
+	   		,className="text_style"),className="center-container", width="40%")
+	            ])
+            ]
+        ),
+    ],),id="death-rate",className="pretty_container"),
 	    
-	    html.Div(
-	    	dcc.Graph(figure = get_fatality_test_per_positive_graph(),
-	                              config={'displayModeBar': False},animate=True),
+	    html.Div([
+	    	html.H2("Fatality Rate",className="heading_style"),
+	    	html.Div(dcc.Graph(figure = get_fatality_test_per_positive_graph(),
+	                              config={'displayModeBar': False}))
+	    	],
 	    	className="pretty_container",id="fatality"),
 	    ],className="pretty_container content_style",),
 
