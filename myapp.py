@@ -1,6 +1,8 @@
 import pandas as pd
 import plotly.graph_objects as go 
 from plotly.subplots import make_subplots
+import plotly.express as px
+from dash.dependencies import Input, Output, State
 
 import dash
 import dash_table
@@ -45,9 +47,9 @@ def get_death_rate():
     alert_string = ''
     if hour > 0:
        alert_string += '{} hours '.format(int(hour))
-    elif minutes > 0:
+    if minutes > 0:
     	alert_string += '{} minutes '.format(int(minutes))
-    else:
+    if sec > 0:
     	alert_string += '{} seconds'.format(int(sec))
     return alert_string
     
@@ -67,6 +69,8 @@ def get_covid_status_graph():
                     mode='lines',
                     fill='tonexty',
                     name='Total Active',
+                    showlegend=False,
+                    hoverinfo='skip',
                     fillcolor = '#ffeee6',
                     line_color='#993300'))
 
@@ -238,7 +242,7 @@ def get_overall_status_card():
     	html.Div([html.H6("Total Deceased",className="text-muted text-center"),
            		html.P("{0:n}".format(get_total_death_data()),className="text-muted text-center")],
            		className="mini_container",),
-   		],className="four columns")
+   		],className="two columns")
 
 
 def get_tests_vs_positive_data():
@@ -251,7 +255,8 @@ def get_tests_vs_positive_data():
     counter = 0
     for index, row in sample_case_data.iterrows():
         no_of_tests.append(sample_daily_test_data.values[counter][6])
-        positivity_rate.append(round((sample_case_data.values[counter][1]/int(sample_daily_test_data.values[counter][6])*100),2))
+        if sample_daily_test_data.values[counter][6] is not 'Nan' :
+            positivity_rate.append(round((sample_case_data.values[counter][1]/int(sample_daily_test_data.values[counter][6])*100),2))
         counter += 1
     graph_data = {'Date': sample_case_data['Date'],
         'Number Of Tests': no_of_tests,
@@ -389,11 +394,12 @@ def get_death_rate_graph():
         yaxis_title="Death rate",
         legend_title="States",
         hovermode = "x",
-        font=dict(
-            family="Courier New, monospace",
-            size=15,
-            color="RebeccaPurple"
-        )
+        # font=dict(
+        #     family="Courier New, monospace",
+        #     size=15,
+        #     color="RebeccaPurple"
+        # )
+
     )
 
     return fig
@@ -480,12 +486,12 @@ def get_tpm_cpm_combined():
                             ]),
                         #dbc.Tab(label="Tab 2", tab_id="tab-2"),
                     ],
-                    id="card-tabs",
+                    id="card-tpm-cpm-tabs",
                     card=True,
                     
                 )
             ),
-            dbc.CardBody(html.P(id="card-content", className="card-text")),
+            dbc.CardBody(html.P(id="card-tpm-cpm-content", className="card-text")),
         ]
     )
     
@@ -495,9 +501,47 @@ def get_test_per_positive_data():
     last_updated_date = state_wise_daily_data.tail(1)['Date']
     date_time_obj = datetime. strptime(last_updated_date.values[0], '%d-%b-%y')
     last_updated_date = (date_time_obj + timedelta(days = 1)).strftime('%d-%b-%y')
-    filtered_data = test_data[test_data['Updated On'] <= last_updated_date][['State','Tests per positive case']]
-    test_per_positive_data = filtered_data.groupby('State')
+    #filtered_data = test_data[test_data['Updated On'] <= last_updated_date][['State','Tests per positive case']]
+    test_data.drop(test_data[test_data['Updated On'] == date.today().strftime('%d/%m/%Y')].index, inplace = True)
+    test_data['Test Positivity'] = round((test_data['Total Tested']/test_data['Positive'])*100,2)
+    test_per_positive_data = test_data.groupby('State')
     return test_per_positive_data
+
+def get_fatality_state_wise_data():
+    table_data = {
+        'State':{},
+        'Fatality Rate':{},
+        'Test Per Positive Case':{}
+    }
+    data_table = pd.DataFrame(table_data)
+    cum_deceased_data = get_death_data().cumsum()
+    cum_confirmed_data = get_confirmed_data().cumsum()
+    test_per_positive_data = get_test_per_positive_data()
+    state_code_list = get_state_code_list()
+    previous_day = (date.today()  - timedelta(days = 1)).strftime('%d/%m/%Y')
+    for i in test_per_positive_data.groups.keys():
+        test_per_confirmed = test_per_positive_data.get_group(i).tail(30)
+        if i == 'Dadra and Nager Haveli and Daman and Diu':
+            i = 'DN & DU'
+        state_code = state_code_list[state_code_list['State']==i]['State_code'].values[0]
+        fatality_rate = ((cum_deceased_data[state_code]/cum_confirmed_data[state_code])*100).tail(30)
+        #table population
+        test_per_confirmed_latest = test_per_confirmed[test_per_confirmed['Updated On']==previous_day]['Test Positivity']
+        fatality_rate_latest = round(fatality_rate.tail(1).values[0],2)
+        row = [i,fatality_rate_latest,test_per_confirmed_latest]
+        data_table.loc[len(data_table)] = row
+        data_table.sort_values(by=['Fatality Rate'],ascending=False,inplace=True)
+    return data_table
+
+def get_fatality_state_wise_graph():
+    data_table = get_fatality_state_wise_data()
+    modeBarButtons = [['toImage']]
+    fig = px.bar(data_table, x='State', y='Fatality Rate',width=500,
+    	color='Fatality Rate', color_continuous_scale=px.colors.sequential.YlOrRd,
+    	)
+    fig.update_xaxes(tickangle=45,)
+    return fig, data_table
+    
 
 def get_fatality_test_per_positive_graph():
     #table
@@ -507,64 +551,196 @@ def get_fatality_test_per_positive_graph():
            }
     data_table = pd.DataFrame(table_data)
     data=[]
-    fig = make_subplots(
-    rows=1, cols=2,
-    vertical_spacing=0.3,
-    specs=[[{"type": "scatter"},{"type": "table"}]]
-    )
+    # fig = make_subplots(
+    # rows=1, cols=2,
+    # vertical_spacing=0.3,
+    # specs=[[{"type": "scatter"},{"type": "table"}]]
+    # )
     cum_deceased_data = get_death_data().cumsum()
     cum_confirmed_data = get_confirmed_data().cumsum()
     test_per_positive_data = get_test_per_positive_data()
     state_code_list = get_state_code_list()
+    previous_day = (date.today()  - timedelta(days = 1)).strftime('%d/%m/%Y')
     for i in test_per_positive_data.groups.keys():
         test_per_confirmed = test_per_positive_data.get_group(i).tail(30)
         if i == 'Dadra and Nager Haveli and Daman and Diu':
             i = 'DN & DU'
         state_code = state_code_list[state_code_list['State']==i]['State_code'].values[0]
         fatality_rate = ((cum_deceased_data[state_code]/cum_confirmed_data[state_code])*100).tail(30)
-        fig.add_trace(go.Scatter(x=test_per_confirmed['Tests per positive case'], 
+        data.append(go.Scatter(x=test_per_confirmed['Test Positivity'], 
                            y=fatality_rate, mode="lines",
-                           name=i),row=1,col=1)
+                           name=i))
         #table population
-        test_per_confirmed_latest = test_per_confirmed.tail(1).values[0][1]
+        test_per_confirmed_latest = test_per_confirmed[test_per_confirmed['Updated On']==previous_day]['Test Positivity']
         #print(test_per_confirmed_latest)
         fatality_rate_latest = round(fatality_rate.tail(1).values[0],2)
         row = [i,fatality_rate_latest,test_per_confirmed_latest]
         data_table.loc[len(data_table)] = row
 
-    fig.update_yaxes(ticksuffix="%")
+    # fig = go.Figure(data=data)
 
-    fig.update_layout(
-        title={
-            'text': "Case Fatality Rate v/s Test Per Positive Case",
-            'y':0.9,
-            'x':0.3,
-            'xanchor': 'center',
-            'yanchor': 'top'},
-        xaxis={"fixedrange": True},
-        xaxis_title="Test per positive case",
-        yaxis_title="Case fatality rate",
-        legend_title="States",
+    # fig.update_layout(
+    #     title={
+    #         'text': "Case Fatality Rate v/s Test Per Positive Case",
+    #         'y':0.9,
+    #         'x':0.3,
+    #         'xanchor': 'center',
+    #         'yanchor': 'top'},
+    #     xaxis={"fixedrange": True},
+    #     xaxis_title="Test per positive case",
+    #     yaxis_title="Case fatality rate",
+    #     legend_title="States",
 
-    )
+    # )
     
-    fig.add_trace(go.Table(
-        header=dict(
-            values=data_table.columns,
-            font=dict(size=10),
-            align="left"
+    # fig.add_trace(go.Table(
+    #     header=dict(
+    #         values=data_table.columns,
+    #         font=dict(size=10),
+    #         align="left"
+    #     ),
+    #     cells=dict(
+    #         values=[data_table[k].tolist() for k in data_table.columns],
+    #         align = "left")
+    # ),row=1,col=2
+    # )
+    return data_table
+
+def get_fatality_graph():
+	graph, table = get_fatality_state_wise_graph()
+	card = dbc.Card(
+		[
+		dbc.CardHeader(
+			dbc.Tabs(
+				[
+				dcc.Tab(label='Graph', children=[
+					dcc.Graph(
+						figure = graph,config={
+					        'modeBarButtons': [['toImage']],
+					        'displaylogo': False,
+					        'displayModeBar': True
+					    })
+					]),
+				dcc.Tab(label='Table', children=[
+					dbc.Table.from_dataframe(table, striped=True, bordered=True, hover=True)
+					]),
+					#dbc.Tab(label="Tab 2", tab_id="tab-2"),
+					],id="card-fatality-tabs",card=True,
+					)
+			),
+		dbc.CardBody(html.P(id="card-fatality-content", className="card-text")),
+		])
+	return card
+
+nav = dbc.NavbarSimple(
+    children=[
+        dbc.NavItem(dbc.NavLink("tpm-cpm", href="#tpm-cpm",external_link=True)),
+        dbc.DropdownMenu(
+            children=[
+              	#dbc.NavLink("Death Rate", href="#death-rate", id="death-rate-link",external_link=True),
+                #dbc.NavLink("Fatality Rate", href="#fatality", id="fatality-link",external_link=True),
+                #dbc.DropdownMenuItem("More pages", header=True),
+                dbc.DropdownMenuItem("tpm-cpm", href="#tpm-cpm",external_link=True),
+                # dbc.DropdownMenuItem("tpm", 
+                # 	href=[dbc.NavLink("Fatality Rate", href="#fatality", id="fatality-link",external_link=True)],
+                # 	external_link=True),
+                #dbc.DropdownMenuItem("Page 3", href="#"),
+            ],
+            nav=True,
+            in_navbar=True,
+            label="More",
         ),
-        cells=dict(
-            values=[data_table[k].tolist() for k in data_table.columns],
-            align = "left")
-    ),row=1,col=2
-    )
-    return fig
+    ],
+    brand="NavbarSimple",
+    brand_href="#",
+    color="primary",
+    dark=True,
+)
+
+section_list = dbc.Nav(
+            [
+                dbc.NavLink("Covid Status", href="#covid-status", id="covid-status-link",external_link=True),
+                dbc.NavLink("Test Positivity", href="#test-positivity", id="test-positivity-link",external_link=True),
+                dbc.NavLink("Test Efficiency", href="#tpm-cpm", id="tpm-cpm-link",external_link=True),
+                dbc.NavLink("Death Rate", href="#death-rate", id="death-rate-link",external_link=True),
+                dbc.NavLink("Fatality Rate", href="#fatality", id="fatality-link",external_link=True),
+            ],
+             # horizontal=True,
+             # pills=True,
+             fill=True,
+             style={"font-size":"22px"}
+        )
+
+
+collapse = html.Div(
+    [
+        dbc.Button(
+            "Explore",
+            id="left",
+            #className="mb-3",
+            color="primary",
+        ),
+        dbc.Collapse(
+            section_list,
+            id="left-collapse",
+            #style={"width":"20px"}
+        ),
+    ]
+)
+
+navbar = dbc.NavbarSimple(
+    children=[
+       collapse
+    ],
+    #brand="NavbarSimple",
+    brand_href="#",
+    color="lightgrey",
+    dark=True,
+)
+
+# @app.callback(
+#     Output("left-collapse", "is_open"),
+#     [Input("left", "n_clicks")],
+#     [State("left-collapse", "is_open")],
+# )
+# def toggle_collapse(n, is_open):
+#     if n:
+#         return not is_open
+#     return is_open
+
+sidebar_header = dbc.Row(
+    [
+        dbc.Col(html.H2("Explore", className="display-4")),
+        dbc.Col(
+            [
+                
+                html.Button(
+                    # use the Bootstrap navbar-toggler classes to style
+                    html.Span(className="navbar-toggler-icon"),
+                    
+                    # the navbar-toggler classes don't set color
+                    style={
+                        "color": "#ffb3b3",
+                        "border-color": "rgba(0,0,0,.1)",
+                        "background-color":"#cccccc",
+                    },
+                    id="sidebar-toggle",
+                ),
+            ],
+            # the column containing the toggle will be only as wide as the
+            # toggle, resulting in the toggle being right aligned
+            width="auto",
+            # vertically align the toggle in the center
+            align="center",
+        ),
+    ]
+)
 
 sidebar = html.Div(
     children=[
-        html.H1("Explore", className="display-4"),
+        sidebar_header,
         html.Hr(),
+        # dbc.Collapse(
         dbc.Nav(
             [
                 dbc.NavLink("Covid Status", href="#covid-status", id="covid-status-link",external_link=True),
@@ -577,14 +753,13 @@ sidebar = html.Div(
             pills=True,
             style={"font-size":"22px"}
         ),
-    ],className='sidebar_style'
+        # )
+    ],id="sidebar"
 )
 
-
-
-app.layout = html.Div([
-		html.Div(sidebar,),
-    	html.Div([
+content = html.Div([
+    	
+    	#html.Div(nav),
 	    dbc.Alert([html.B([
 	    	html.P(["Someone is dying in every",
 	    		html.Span(get_death_rate(),style={"font-size":"50px","padding-left":"5px","padding-right":"5px"}),"in India!",
@@ -592,7 +767,9 @@ app.layout = html.Div([
 	    	],className="text-danger",style={"font-size":"25px"}),], color="danger",
 	    className="p-5 text-center",style={"font-size":"large","border-radius": "7px"}),
 	    html.Div(get_current_status_card(),id="status",),
-
+	    html.Div([html.P("An outbreak anywhere can go everywhere. We all need to pitch in to try to prevent cases both within ourselves and in our communities."),
+        html.P("Flattening the curve is a public health strategy to slow down the spread of the SARS-CoV-2 virus during the COVID-19 pandemic. when virus spread goes up in an exponential way, at one point it exceeds the capacity of total health infrastructure can handle. it leads to failure of health care system of the nation.If individuals and communities take steps to slow the virus’s spread, that means the number of cases of COVID-19 will stretch out across a longer period of time.The number of cases at any given time doesn’t cross the  capacity of the our nation’s health care system to help everyone who’s very sick.Social distancing, wearing maks and washing hands can prevent the failure of health infrastructure")],
+        ),
 	   	html.Div([
 	   		 dbc.Card(
         [
@@ -668,13 +845,38 @@ app.layout = html.Div([
 	    
 	    html.Div([
 	    	html.H2("Fatality Rate",className="heading_style"),
-	    	html.Div(dcc.Graph(figure = get_fatality_test_per_positive_graph(),
-	                              config={'displayModeBar': False}))
+	    	html.Div(get_fatality_graph())
 	    	],
 	    	className="pretty_container",id="fatality"),
-	    ],className="pretty_container content_style",),
+	    ],id="content")
 
-	   ],id="mainContainer", style={"display": "flex", "flex-direction": "column"},
+@app.callback(
+    Output("sidebar", "className"),
+    [Input("sidebar-toggle", "n_clicks")],
+    [State("sidebar", "className")],
+)
+def toggle_classname(n, classname):
+    if n and classname == "":
+        return "collapsed active"
+    return ""
+
+
+# @app.callback(
+#     Output("collapse", "is_open"),
+#     [Input("navbar-toggle", "n_clicks")],
+#     [State("collapse", "is_open")],
+# )
+# def toggle_collapse(n, is_open):
+#     if n:
+#         return not is_open
+#     return is_open
+
+app.layout = html.Div([
+	    #dcc.Location(id='url', refresh=True),
+		#html.Div(nav),
+		sidebar,
+    	content,   
+],className="wrapper",
 )
 
 if __name__ == '__main__':
