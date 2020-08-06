@@ -20,10 +20,11 @@ body {
 .pretty_container {
   border-radius: 5px;
   background-color: #f9f9f9;
-  margin: 10px;
-  padding: 15px;
+  /*margin: 10px;
+  padding: 15px;*/
   position: relative;
   box-shadow: 2px 2px 2px lightgrey;
+  width:auto;
 }
 
 .bare_container {
@@ -103,18 +104,12 @@ body {
   box-shadow: 2px 2px 2px lightgrey;
 }
 
-.sidebar_style {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 16rem;
-  padding: 2rem 2rem;
-}
-
-.content_style {
-    margin-left: 10rem;
-    padding: 2rem 1rem;
+#main_container {
+    /*margin-left: 20rem;
+    padding: 2rem 1rem;*/
+    display: flex;
+    flex-direction: column;
+    width:auto;
 }
 
 
@@ -148,9 +143,14 @@ body {
   flex: 3;
 }
 
-#mainContainer {
+.mainContainer {
   display: flex;
-  flex-direction: column;
+  align-items: stretch;
+}
+
+.wrapper {
+  display: flex;
+  align-items: stretch;
 }
 
 #pie_graph > div > div > svg:nth-child(3) > g.infolayer > g.legend {
@@ -159,5 +159,23 @@ body {
 }
 
 .gif_player img {
-    max-width: 20%; }
+    width:50px;
+    height:auto;
+    padding-left: 10px;
+    /*max-width: 10%; */}
 
+.center-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.text_style {
+  padding:20px;
+  font-size:medium;
+  
+}
+
+.heading_style {
+  background-color: rgba(0,0,0,.03);
+}
