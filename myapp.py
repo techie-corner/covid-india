@@ -22,21 +22,14 @@ import locale
 app = dash.Dash(__name__,title="Covid in India",external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
 
-mini_container = {
-    "border-radius": "5px",
-    "background-color": "#f9f9f9",
-    "margin": "10px",
-    "padding": "15px",
-    "position": "relative",
-    "box-shadow": "2px 2px 2px lightgrey",
-    }
-
 target_url = 'https://api.covid19india.org/csv/latest/case_time_series.csv'
 case_file = pd.read_csv (target_url)
 test_file_location = "https://api.covid19india.org/csv/latest/statewise_tested_numbers_data.csv"
 test_data = pd.read_csv(test_file_location)
 state_wise_daily_url = 'https://api.covid19india.org/csv/latest/state_wise_daily.csv'
 state_wise_daily_data = pd.read_csv (state_wise_daily_url)
+state_wise_url = 'https://api.covid19india.org/csv/latest/state_wise.csv'
+state_wise_data = pd.read_csv(state_wise_url)
 
 def get_death_rate():
     total_days = (len(case_file)*24*60*60)
@@ -322,8 +315,6 @@ def get_confirmed_data():
     return state_wise_confirmed_data
     
 def get_state_code_list():
-    state_wise_url = 'https://api.covid19india.org/csv/latest/state_wise.csv'
-    state_wise_data = pd.read_csv(state_wise_url)
     state_wise_data.replace('Dadra and Nagar Haveli and Daman and Diu', 'DNHDD',inplace=True)
     state_code_list = state_wise_data[['State','State_code']][1:]
     # index_pos = int(state_code_list[state_code_list['State_code']=='DN'].index[0])
@@ -357,52 +348,51 @@ def get_death_rate_data():
                 state_wise_death_rate[i] = round((total_deceased_cases_biweekly[i]/total_confirmed_cases_biweekly[i])*100,2)
             row.append(state_wise_death_rate[i])
         data_set.loc[len(data_set)] = row
-        lower_limit =upper_limit + 1
         upper_limit += 14
     row = [upper_limit + 1]
     row += ['Nan']*37
     data_set.loc[len(data_set)] = row
     return data_set
 
-def get_death_rate_graph():
-    data = []
-    state_code_list = get_state_code_list()
-    data_set = get_death_rate_data()
-    for i in state_code_list['State_code']:
-        if i == 'DN':
-        	index_pos = int(state_code_list[state_code_list['State_code']=='DN'].index[0])
-        	state_code_list.at[index_pos,'State']= 'DNHDD'
-        data.append(go.Scatter(x=data_set['Days Interval'], y=data_set[i], mode="lines",
-                               name=state_code_list[state_code_list['State_code']==i]['State'].values[0]))
+# def get_death_rate_graph():
+#     data = []
+#     state_code_list = get_state_code_list()
+#     data_set = get_death_rate_data()
+#     for i in state_code_list['State_code']:
+#         if i == 'DN':
+#         	index_pos = int(state_code_list[state_code_list['State_code']=='DN'].index[0])
+#         	state_code_list.at[index_pos,'State']= 'DNHDD'
+#         data.append(go.Scatter(x=data_set['Days Interval'], y=data_set[i], mode="lines",
+#                                name=state_code_list[state_code_list['State_code']==i]['State'].values[0]))
 
-    fig = go.Figure(data=data)
+#     fig = go.Figure(data=data)
 
-    # Suffix y-axis tick labels with % sign
-    fig.update_yaxes(ticksuffix="%")
-    fig.update_xaxes(tick0=0, dtick=14)
+#     # Suffix y-axis tick labels with % sign
+#     fig.update_yaxes(ticksuffix="%")
+#     fig.update_xaxes(tick0=0, dtick=14)
 
-    fig.update_layout(
-        title="Death Rate - State wise overview",
-        xaxis={"fixedrange": True},
-        # {
-        #     'text': "Death Rate - State wise overview",
-        #     'y':0.9,
-        #     'x':1,
-        #     'xanchor': 'center',
-        #     'yanchor': 'top'},
-        xaxis_title="No Of Days",
-        yaxis_title="Death rate",
-        legend_title="States",
-        hovermode = "x",
-        # font=dict(
-        #     family="Courier New, monospace",
-        #     size=15,
-        #     color="RebeccaPurple"
-        # )
+#     fig.update_layout(
+#         title="Death Rate - State wise overview",
+#         xaxis={"fixedrange": True},
+#         # {
+#         #     'text': "Death Rate - State wise overview",
+#         #     'y':0.9,
+#         #     'x':1,
+#         #     'xanchor': 'center',
+#         #     'yanchor': 'top'},
+#         xaxis_title="No Of Days",
+#         yaxis_title="Death rate",
+#         legend_title="States",
+#         hovermode = "x",
+#         # font=dict(
+#         #     family="Courier New, monospace",
+#         #     size=15,
+#         #     color="RebeccaPurple"
+#         # )
 
-    )
+#     )
 
-    return fig
+#     return fig
 
 def get_tpm_cpm_data():
     # last_day_1 = (date.today()  - timedelta(days = 1)).strftime('%d-%m-%Y')
@@ -503,7 +493,7 @@ def get_test_per_positive_data():
     last_updated_date = (date_time_obj + timedelta(days = 1)).strftime('%d-%b-%y')
     #filtered_data = test_data[test_data['Updated On'] <= last_updated_date][['State','Tests per positive case']]
     test_data.drop(test_data[test_data['Updated On'] == date.today().strftime('%d/%m/%Y')].index, inplace = True)
-    test_data['Test Positivity'] = round((test_data['Total Tested']/test_data['Positive'])*100,2)
+    test_data['Test Positivity'] = (test_data['Total Tested']/test_data['Positive'])
     test_per_positive_data = test_data.groupby('State')
     return test_per_positive_data
 
@@ -632,81 +622,86 @@ def get_fatality_graph():
 		])
 	return card
 
-nav = dbc.NavbarSimple(
-    children=[
-        dbc.NavItem(dbc.NavLink("tpm-cpm", href="#tpm-cpm",external_link=True)),
-        dbc.DropdownMenu(
-            children=[
-              	#dbc.NavLink("Death Rate", href="#death-rate", id="death-rate-link",external_link=True),
-                #dbc.NavLink("Fatality Rate", href="#fatality", id="fatality-link",external_link=True),
-                #dbc.DropdownMenuItem("More pages", header=True),
-                dbc.DropdownMenuItem("tpm-cpm", href="#tpm-cpm",external_link=True),
-                # dbc.DropdownMenuItem("tpm", 
-                # 	href=[dbc.NavLink("Fatality Rate", href="#fatality", id="fatality-link",external_link=True)],
-                # 	external_link=True),
-                #dbc.DropdownMenuItem("Page 3", href="#"),
-            ],
-            nav=True,
-            in_navbar=True,
-            label="More",
-        ),
-    ],
-    brand="NavbarSimple",
-    brand_href="#",
-    color="primary",
-    dark=True,
-)
+def get_total_confirmed_graph(state_wise_data):
+    confirmed_data = state_wise_data.sort_values(by=['Confirmed'],ascending=False)
+    modeBarButtons = [[ 'toImage']]
+    fig = px.bar(confirmed_data, x='State', y='Confirmed',color='Confirmed', color_continuous_scale=px.colors.sequential.Redor,
+            title="Total Confirmed Cases")
+    fig.update_layout(
+    title=dict(x=0.5))
+    fig.update_xaxes(tickangle=45,)
 
-section_list = dbc.Nav(
-            [
-                dbc.NavLink("Covid Status", href="#covid-status", id="covid-status-link",external_link=True),
-                dbc.NavLink("Test Positivity", href="#test-positivity", id="test-positivity-link",external_link=True),
-                dbc.NavLink("Test Efficiency", href="#tpm-cpm", id="tpm-cpm-link",external_link=True),
-                dbc.NavLink("Death Rate", href="#death-rate", id="death-rate-link",external_link=True),
-                dbc.NavLink("Fatality Rate", href="#fatality", id="fatality-link",external_link=True),
-            ],
-             # horizontal=True,
-             # pills=True,
-             fill=True,
-             style={"font-size":"22px"}
-        )
+    return fig
 
+def get_total_active_graph(state_wise_data):
+	active_data = state_wise_data.sort_values(by=['Active'],ascending=False)
+	modeBarButtons = [[ 'toImage']]
+	fig = px.bar(active_data, x='State', y='Active',color='Active', color_continuous_scale=px.colors.sequential.Bluyl,
+            title="Total Active Cases")
+	fig.update_layout(
+    title=dict(x=0.5))
+	fig.update_xaxes(tickangle=45,)
+	return fig
 
-collapse = html.Div(
+def get_total_deaths_graph(state_wise_data):
+	death_data = state_wise_data.sort_values(by=['Deaths'],ascending=False)
+	modeBarButtons = [[ 'toImage']]
+	fig = px.bar(death_data, x='State', y='Deaths',color='Deaths', color_continuous_scale=px.colors.sequential.Burg,
+            title="Total Deaths")
+	fig.update_layout(
+    title=dict(x=0.5))
+	fig.update_xaxes(tickangle=45,)
+	return fig
+
+radioitems = dbc.FormGroup(
     [
-        dbc.Button(
-            "Explore",
-            id="left",
-            #className="mb-3",
-            color="primary",
-        ),
-        dbc.Collapse(
-            section_list,
-            id="left-collapse",
-            #style={"width":"20px"}
+        dbc.RadioItems(
+            options=[
+                {"label": "Confirmed", "value": 1},
+                {"label": "Active", "value": 2},
+                {"label": "Deaths", "value": 3},
+            ],
+            value=1,
+            id="radioitems-input",
+            inline=True,
         ),
     ]
 )
 
-navbar = dbc.NavbarSimple(
-    children=[
-       collapse
-    ],
-    #brand="NavbarSimple",
-    brand_href="#",
-    color="lightgrey",
-    dark=True,
+inputs = html.Div(
+    [
+        dbc.Form(radioitems),
+       
+    ]
 )
 
-# @app.callback(
-#     Output("left-collapse", "is_open"),
-#     [Input("left", "n_clicks")],
-#     [State("left-collapse", "is_open")],
-# )
-# def toggle_collapse(n, is_open):
-#     if n:
-#         return not is_open
-#     return is_open
+
+@app.callback(
+    Output("radio-items", "children"),
+    [
+        Input("radioitems-input", "value"),
+    ],
+)
+def on_form_change(value):
+    data = state_wise_data.drop(state_wise_data[state_wise_data['State_code'].isin(['TT','UN'])==True].index)
+    if value == 1:
+    	return dcc.Graph(figure = get_total_confirmed_graph(data),config={
+		        'modeBarButtons': [['toImage']],
+		        'displaylogo': False,
+		        'displayModeBar': True
+		    })
+    if value == 2:
+    	return dcc.Graph(figure = get_total_active_graph(data),config={
+		        'modeBarButtons': [['toImage']],
+		        'displaylogo': False,
+		        'displayModeBar': True
+		    })
+    if value == 3:
+    	return dcc.Graph(figure = get_total_deaths_graph(data),config={
+		        'modeBarButtons': [['toImage']],
+		        'displaylogo': False,
+		        'displayModeBar': True
+		    })
 
 sidebar_header = dbc.Row(
     [
@@ -714,18 +709,19 @@ sidebar_header = dbc.Row(
         dbc.Col(
             [
                 
-                html.Button(
-                    # use the Bootstrap navbar-toggler classes to style
-                    html.Span(className="navbar-toggler-icon"),
+                # html.Button(
+                #     # use the Bootstrap navbar-toggler classes to style
+                #     html.Span(className="navbar-toggler-icon"),
                     
-                    # the navbar-toggler classes don't set color
-                    style={
-                        "color": "#ffb3b3",
-                        "border-color": "rgba(0,0,0,.1)",
-                        "background-color":"#cccccc",
-                    },
-                    id="sidebar-toggle",
-                ),
+                #     # the navbar-toggler classes don't set color
+                #     style={
+                #         "color": "#ffb3b3",
+                #         "border-color": "rgba(0,0,0,.1)",
+                #         "background-color":"#cccccc",
+                #         "width":"30px"
+                #     },
+                #     id="sidebar-toggle",
+                # ),
             ],
             # the column containing the toggle will be only as wide as the
             # toggle, resulting in the toggle being right aligned
@@ -744,9 +740,9 @@ sidebar = html.Div(
         dbc.Nav(
             [
                 dbc.NavLink("Covid Status", href="#covid-status", id="covid-status-link",external_link=True),
+                dbc.NavLink("State Wise Overview", href="#state-overview", id="death-rate-link",external_link=True),
                 dbc.NavLink("Test Positivity", href="#test-positivity", id="test-positivity-link",external_link=True),
                 dbc.NavLink("Test Efficiency", href="#tpm-cpm", id="tpm-cpm-link",external_link=True),
-                dbc.NavLink("Death Rate", href="#death-rate", id="death-rate-link",external_link=True),
                 dbc.NavLink("Fatality Rate", href="#fatality", id="fatality-link",external_link=True),
             ],
             vertical=True,
@@ -760,6 +756,19 @@ sidebar = html.Div(
 content = html.Div([
     	
     	#html.Div(nav),
+    	html.Button(
+                    # use the Bootstrap navbar-toggler classes to style
+                    html.Span(className="navbar-toggler-icon"),
+                    
+                    # the navbar-toggler classes don't set color
+                    style={
+                        "color": "#ffb3b3",
+                        "border-color": "rgba(0,0,0,.1)",
+                        "background-color":"#cccccc",
+                        "width":"30px"
+                    },
+                    id="sidebar-toggle",
+                ),
 	    dbc.Alert([html.B([
 	    	html.P(["Someone is dying in every",
 	    		html.Span(get_death_rate(),style={"font-size":"50px","padding-left":"5px","padding-right":"5px"}),"in India!",
@@ -788,6 +797,28 @@ content = html.Div([
     ],
     )
 	   ],id="covid-status"),
+
+	   	# html.Div([
+	   	# html.Div([inputs]),
+     #    html.Div(id="radio-items"),],className="pretty_container"),
+
+        html.Div([
+	   		
+	   		 dbc.Card(
+        [
+        dbc.CardHeader("State-Wise Overview",style={"font-size":"30px"}),
+        dbc.CardBody(
+            [
+               	dbc.Row(
+	   			dbc.Col(html.Div([inputs]),className="center-container")
+	   			),
+	            dbc.Row(
+	            dbc.Col(html.Div(id="radio-items"),)
+	            )
+            ]
+        ),
+    ],)
+	   		],id="state-overview"),
 
 	   	html.Div([
 	   		
@@ -827,21 +858,21 @@ content = html.Div([
     ],)], id="tpm-cpm",),
 	        
 
-	    html.Div( dbc.Card(
-        [
-        dbc.CardHeader("Death Rate",style={"font-size":"30px"}),
-        dbc.CardBody(
-            [
-               	dbc.Row([
-	   			dbc.Col(dcc.Graph(figure = get_death_rate_graph(),
-	                              config={'displayModeBar': False}),
-	   			),
-	            dbc.Col(html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
-	   		,className="text_style"),className="center-container", width="40%")
-	            ])
-            ]
-        ),
-    ],),id="death-rate",className="pretty_container"),
+	   #  html.Div( dbc.Card(
+    #     [
+    #     dbc.CardHeader("Death Rate",style={"font-size":"30px"}),
+    #     dbc.CardBody(
+    #         [
+    #            	dbc.Row([
+	   # 			dbc.Col(dcc.Graph(figure = get_death_rate_graph(),
+	   #                            config={'displayModeBar': False}),
+	   # 			),
+	   #          dbc.Col(html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
+	   # 		,className="text_style"),className="center-container", width="40%")
+	   #          ])
+    #         ]
+    #     ),
+    # ],),id="death-rate",className="pretty_container"),
 	    
 	    html.Div([
 	    	html.H2("Fatality Rate",className="heading_style"),
