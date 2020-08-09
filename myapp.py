@@ -19,46 +19,84 @@ from datetime import timedelta
 import math
 import locale
 
+from apps import scheduler, utility, alert, covid_curve, test_positivity, death_rate, test_efficiency, fatality
+
 app = dash.Dash(__name__,title="Covid in India",external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
 
-target_url = 'https://api.covid19india.org/csv/latest/case_time_series.csv'
-case_file = pd.read_csv (target_url)
-test_file_location = "https://api.covid19india.org/csv/latest/statewise_tested_numbers_data.csv"
-test_data = pd.read_csv(test_file_location)
-state_wise_daily_url = 'https://api.covid19india.org/csv/latest/state_wise_daily.csv'
-state_wise_daily_data = pd.read_csv (state_wise_daily_url)
-state_wise_url = 'https://api.covid19india.org/csv/latest/state_wise.csv'
-state_wise_data = pd.read_csv(state_wise_url)
+#to get csv data
+data_set = scheduler.get_data()
+state_code_list = utility.get_state_code_list(data_set)
 
-def get_death_rate():
-    total_days = (len(case_file)*24*60*60)
-    total_deaths = case_file['Daily Deceased'].sum()
-    death_rate = total_days/total_deaths
-    minutes, sec = divmod(death_rate, 60) 
-    hour, minutes = divmod(minutes, 60)
-    alert_string = ''
-    if hour > 0:
-       alert_string += '{} hours '.format(int(hour))
-    if minutes > 0:
-    	alert_string += '{} minutes '.format(int(minutes))
-    if sec > 0:
-    	alert_string += '{} seconds'.format(int(sec))
-    return alert_string
+def get_current_status_card(data_set):
+    daily_data = alert.get_daily_data(data_set)
+    card_content_confirmed = [
+            html.Div(
+                [	html.H6("Confirmed",className="text-center"),
+                    html.Div(
+                        "{0:n}".format(daily_data["Daily Confirmed"].values[0]),
+                        className="card-text text-center",
+                    ),
+                ],className="w-30",style={"background-color":"#ffd6cc","border-radius": "10px",
+                						 "box-shadow": "2px 2px 2px lightgrey"}
+            )
+        ]
+    card_content_recovered = [
+            html.Div(
+                [
+                	html.H6("Recovered",className="text-center"),
+                    html.P(
+                        "{0:n}".format(daily_data["Daily Recovered"].values[0]),
+                        className="card-text text-center",
+                    ),
+                ],className="w-10",style={"background-color":"#d9f2d9","border-radius": "10px", 
+                						 "box-shadow": "2px 2px 2px lightgrey"}
+            )
+        ]
+    card_content_deceased = [
+            html.Div(
+                [	html.H6("Deceased",className="text-center"),
+                    html.P(
+                        "{0:n}".format(daily_data["Daily Deceased"].values[0]),
+                        className="card-text text-center",
+                    ),
+                ],className="w-10",style={"background-color":"#d9d9d9", "border-radius": "10px",
+                						  "box-shadow": "2px 2px 2px lightgrey"}
+            )
+        ]
     
+    current_status_arrange = [dbc.Row(
+        [
+            dbc.Col(dbc.Card(card_content_confirmed,)),
+            dbc.Col(dbc.Card(card_content_recovered,)),
+            dbc.Col(dbc.Card(card_content_deceased,)),
+        ],
+        className="mb-4"
+    ),         
+    ]
+    card_current_status = [
+            dbc.CardBody(
+                 current_status_arrange
+            ),
+
+            ]
+        
+    return card_current_status
+
 def get_covid_status_graph():
+    case_time_series_data = data_set['case_time_series_data']
     # Create traces
     fig = go.Figure()
     fig.layout.xaxis.zeroline = False
     fig.layout.yaxis.zeroline = False
     #Total Confirmed cases
-    fig.add_trace(go.Scatter(x=case_file.Date, y=case_file["Total Confirmed"],
+    fig.add_trace(go.Scatter(x=case_time_series_data.Date, y=case_time_series_data["Total Confirmed"],
                     mode='lines',
                     line_color='#e60000',
                     name='Total Confirmed'))
 
     #Total Active cases
-    fig.add_trace(go.Scatter(x=case_file.Date, y=case_file["Total Recovered"] + case_file["Total Deceased"],
+    fig.add_trace(go.Scatter(x=case_time_series_data.Date, y=case_time_series_data["Total Recovered"] + case_time_series_data["Total Deceased"],
                     mode='lines',
                     fill='tonexty',
                     name='Total Active',
@@ -68,13 +106,13 @@ def get_covid_status_graph():
                     line_color='#993300'))
 
     #Total Recovered cases
-    fig.add_trace(go.Scatter(x=case_file.Date, y=case_file["Total Recovered"],
+    fig.add_trace(go.Scatter(x=case_time_series_data.Date, y=case_time_series_data["Total Recovered"],
                     mode='lines',
                     name='Total Recovered',
                     line_color='yellowgreen'))
 
-
-    fig.add_trace(go.Scatter(x=case_file.Date, y=case_file["Total Deceased"],
+    #Total Deaths
+    fig.add_trace(go.Scatter(x=case_time_series_data.Date, y=case_time_series_data["Total Deceased"],
                     mode='lines',
                     fill='tozeroy',
                     name='Total Deceased',
@@ -83,7 +121,7 @@ def get_covid_status_graph():
 
     fig.add_trace(go.Scatter(
     x=["25 March ", "25 March "],
-    y=[case_file["Total Confirmed"].max(),0],
+    y=[case_time_series_data["Total Confirmed"].max(),0],
     mode="lines+text",
     name="Lockdown starts",
     text=["Lockdown"],
@@ -95,7 +133,7 @@ def get_covid_status_graph():
 
     fig.add_trace(go.Scatter(
     x=["01 June ", "01 June "],
-    y=[case_file["Total Confirmed"].max(),0],
+    y=[case_time_series_data["Total Confirmed"].max(),0],
     mode="lines+text",
     name="Unlock 1.0",
     text=["Unlock 1.0"],
@@ -107,7 +145,7 @@ def get_covid_status_graph():
 
     fig.add_trace(go.Scatter(
     x=["01 July ", "01 July "],
-    y=[case_file["Total Confirmed"].max(),0],
+    y=[case_time_series_data["Total Confirmed"].max(),0],
     mode="lines+text",
     name="Unlock 2.0",
     text=["Unlock 2.0"],
@@ -142,128 +180,33 @@ def get_covid_status_graph():
     return fig
 
 
-def get_daily_data():
-    daily_data = case_file.tail(1)
-    return daily_data[["Daily Confirmed","Daily Recovered","Daily Deceased"]]
-
-def get_cumulative_status_data():
-    cumulative_data = case_file.tail(1)
-    return cumulative_data[["Total Confirmed","Total Recovered","Total Deceased"]]
-
-def get_total_death_data():
-    return get_cumulative_status_data()["Total Deceased"].values[0]
-
-def get_total_recovered_data():
-    return get_cumulative_status_data()["Total Recovered"].values[0]
-
-def get_total_confirmed_data():
-    return get_cumulative_status_data()["Total Confirmed"].values[0]
-
-def get_total_active_data():
-    return (get_total_confirmed_data() - (get_total_recovered_data() + get_total_death_data()))
+def get_overall_status_card(data_set):
     
-def get_current_status_card():
-    card_content_confirmed = [
-            html.Div(
-                [	html.H6("Confirmed",className="text-center"),
-                    html.Div(
-                        "{0:n}".format(get_daily_data()["Daily Confirmed"].values[0]),
-                        className="card-text text-center",
-                    ),
-                ],className="w-30",style={"background-color":"#ffd6cc","border-radius": "10px",
-                						 "box-shadow": "2px 2px 2px lightgrey"}
-            )
-        ]
-    card_content_recovered = [
-            html.Div(
-                [
-                	html.H6("Recovered",className="text-center"),
-                    html.P(
-                        "{0:n}".format(get_daily_data()["Daily Recovered"].values[0]),
-                        className="card-text text-center",
-                    ),
-                ],className="w-10",style={"background-color":"#d9f2d9","border-radius": "10px", 
-                						 "box-shadow": "2px 2px 2px lightgrey"}
-            )
-        ]
-    card_content_deceased = [
-            html.Div(
-                [	html.H6("Deceased",className="text-center"),
-                    html.P(
-                        "{0:n}".format(get_daily_data()["Daily Deceased"].values[0]),
-                        className="card-text text-center",
-                    ),
-                ],className="w-10",style={"background-color":"#d9d9d9", "border-radius": "10px",
-                						  "box-shadow": "2px 2px 2px lightgrey"}
-            )
-        ]
-    
-    current_status_arrange = [dbc.Row(
-        [
-            dbc.Col(dbc.Card(card_content_confirmed,)),
-            dbc.Col(dbc.Card(card_content_recovered,)),
-            dbc.Col(dbc.Card(card_content_deceased,)),
-        ],
-        className="mb-4"
-    ),         
-    ]
-    card_current_status = [
-            dbc.CardBody(
-                 current_status_arrange
-            ),
+    cumulative_status_data = covid_curve.get_cumulative_status_data(data_set)
 
-            ]
-        
-    return card_current_status
-
-
-def get_overall_status_card():
-    
     return html.Div(children=[
     	html.Div([html.H6("Total Confirmed", className="text-danger text-center"),
-           		html.P("{0:n}".format(get_total_confirmed_data()),className="text-danger text-center",)],
+           		html.P("{0:n}".format(cumulative_status_data['Total Confirmed']),className="text-danger text-center",)],
            		className="mini_container",),
 
     	html.Div([html.H6("Active Cases", className="text-info text-center"),
-           		html.P("{0:n}".format(get_total_active_data()),className="text-info text-center")],
+           		html.P("{0:n}".format(cumulative_status_data['Active']),className="text-info text-center")],
            		className="mini_container",),
 
     	html.Div([html.H6("Total Recovered", className="text-success text-center"),
-           		html.P("{0:n}".format(get_total_recovered_data()),className="text-success text-center")],
+           		html.P("{0:n}".format(cumulative_status_data['Total Recovered']),className="text-success text-center")],
            		className="mini_container",),
 
     	html.Div([html.H6("Total Deceased",className="text-muted text-center"),
-           		html.P("{0:n}".format(get_total_death_data()),className="text-muted text-center")],
+           		html.P("{0:n}".format(cumulative_status_data['Total Deceased']),className="text-muted text-center")],
            		className="mini_container",),
    		],className="two columns")
 
 
-def get_tests_vs_positive_data():
-    daily_test_url = 'https://api.covid19india.org/csv/latest/tested_numbers_icmr_data.csv'
-    daily_test_data = pd.read_csv (daily_test_url)
-    sample_daily_test_data = daily_test_data.tail(14)
-    sample_case_data = case_file.tail(14)
-    positivity_rate = []
-    no_of_tests = []
-    counter = 0
-    for index, row in sample_case_data.iterrows():
-        no_of_tests.append(sample_daily_test_data.values[counter][6])
-        if sample_daily_test_data.values[counter][6] is not 'Nan' :
-            positivity_rate.append(round((sample_case_data.values[counter][1]/int(sample_daily_test_data.values[counter][6])*100),2))
-        counter += 1
-    graph_data = {'Date': sample_case_data['Date'],
-        'Number Of Tests': no_of_tests,
-        'Positive': sample_case_data['Daily Confirmed'],
-        'Positivity Rate': positivity_rate
-        }
-
-    df = pd.DataFrame (graph_data, columns = ['Date','Number Of Tests','Positive','Positivity Rate'])
-    return df
-
-def get_tests_vs_positive_graph():
+def get_tests_vs_positive_graph(data_set):
    # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    df = get_tests_vs_positive_data()
+    df = test_positivity.get_tests_vs_positive_data(data_set)
     fig.add_trace(go.Bar(
         x=df["Date"], 
         y=df['Positive'],
@@ -302,120 +245,9 @@ def get_tests_vs_positive_graph():
          hovermode="x unified",
         )
     return fig
-def get_death_data():
-    state_wise_deceased_data = state_wise_daily_data[state_wise_daily_data['Status'] == 'Deceased']
-    state_wise_deceased_data = state_wise_deceased_data.drop(['TT','DD'], axis=1)
-    state_wise_deceased_data = state_wise_deceased_data.reset_index()
-    return state_wise_deceased_data
 
-def get_confirmed_data():
-    state_wise_confirmed_data = state_wise_daily_data[state_wise_daily_data['Status'] == 'Confirmed']
-    state_wise_confirmed_data = state_wise_confirmed_data.drop(['TT','DD'], axis=1)
-    state_wise_confirmed_data = state_wise_confirmed_data.reset_index()
-    return state_wise_confirmed_data
-    
-def get_state_code_list():
-    state_wise_data.replace('Dadra and Nagar Haveli and Daman and Diu', 'DNHDD',inplace=True)
-    state_code_list = state_wise_data[['State','State_code']][1:]
-    # index_pos = int(state_code_list[state_code_list['State_code']=='DN'].index[0])
-    # state_code_list.at[index_pos,'State'] = 'DN & DU'
-    # state_code_list.loc[state_code_list['State_code']=='DN']['State']
-    return state_code_list
-
-def get_death_rate_data():
-    state_wise_deceased_data = get_death_data()
-    state_wise_confirmed_data = get_confirmed_data()
-    #number of biweekly chunks required
-    n = int(state_wise_deceased_data.shape[0]/14)
-    data = {'Days Interval': [0]
-       }
-    data_set = pd.DataFrame(data) 
-    state_code_list = get_state_code_list()
-    for i in state_code_list['State_code']:
-        data_set[i] = 'Nan'
-    # a period of 2 weeks
-    lower_limit = 0
-    upper_limit = 13
-    state_wise_death_rate = {}
-    for i in range(n+1):
-        row = [upper_limit + 1]
-        total_confirmed_cases_biweekly = state_wise_confirmed_data.loc[lower_limit:upper_limit].sum()
-        total_deceased_cases_biweekly = state_wise_deceased_data.loc[lower_limit:upper_limit].sum()
-        for i in state_code_list['State_code']:
-            if total_confirmed_cases_biweekly[i] == 0:
-                state_wise_death_rate[i] = 0
-            else:
-                state_wise_death_rate[i] = round((total_deceased_cases_biweekly[i]/total_confirmed_cases_biweekly[i])*100,2)
-            row.append(state_wise_death_rate[i])
-        data_set.loc[len(data_set)] = row
-        upper_limit += 14
-    row = [upper_limit + 1]
-    row += ['Nan']*37
-    data_set.loc[len(data_set)] = row
-    return data_set
-
-# def get_death_rate_graph():
-#     data = []
-#     state_code_list = get_state_code_list()
-#     data_set = get_death_rate_data()
-#     for i in state_code_list['State_code']:
-#         if i == 'DN':
-#         	index_pos = int(state_code_list[state_code_list['State_code']=='DN'].index[0])
-#         	state_code_list.at[index_pos,'State']= 'DNHDD'
-#         data.append(go.Scatter(x=data_set['Days Interval'], y=data_set[i], mode="lines",
-#                                name=state_code_list[state_code_list['State_code']==i]['State'].values[0]))
-
-#     fig = go.Figure(data=data)
-
-#     # Suffix y-axis tick labels with % sign
-#     fig.update_yaxes(ticksuffix="%")
-#     fig.update_xaxes(tick0=0, dtick=14)
-
-#     fig.update_layout(
-#         title="Death Rate - State wise overview",
-#         xaxis={"fixedrange": True},
-#         # {
-#         #     'text': "Death Rate - State wise overview",
-#         #     'y':0.9,
-#         #     'x':1,
-#         #     'xanchor': 'center',
-#         #     'yanchor': 'top'},
-#         xaxis_title="No Of Days",
-#         yaxis_title="Death rate",
-#         legend_title="States",
-#         hovermode = "x",
-#         # font=dict(
-#         #     family="Courier New, monospace",
-#         #     size=15,
-#         #     color="RebeccaPurple"
-#         # )
-
-#     )
-
-#     return fig
-
-def get_tpm_cpm_data():
-    # last_day_1 = (date.today()  - timedelta(days = 1)).strftime('%d-%m-%Y')
-    # test_data1 = test_data[test_data['Updated On'] < last_day_1]
-    # #test_data = test_data[test_data['Updated On'] < last_day_1]
-    # test_data1['Case Per Million'] = round((test_data1['Positive']/(test_data1['Population NCP 2019 Projection']/1000000)))
-    # test_data1['Test Per Million'] = round((test_data1['Total Tested']/(test_data1['Population NCP 2019 Projection']/1000000)))
-    test_data.drop(test_data[test_data['Updated On'] == date.today().strftime('%d/%m/%Y')].index, inplace = True)
-    test_data.replace('Dadra and Nagar Haveli and Daman and Diu', 'DNHDD',inplace=True) 
-    group_data = test_data.groupby('State')
-    population_dict = get_state_population(group_data)
-    return group_data, population_dict
-
-def get_state_population(group_data):
-	population_dict = {}
-	for i in group_data.groups.keys():
-		population_dict[i] = test_data[test_data['State']==i]['Population NCP 2019 Projection'].values[0]
-	return population_dict
-
-def get_tpm_cpm_graph():
+def get_tpm_cpm_graph(group_data, population_dict):
     data = []
-    state_code_list = get_state_code_list()
-    group_data, population_dict = get_tpm_cpm_data()
     for i in group_data.groups.keys():
         data.append(go.Scatter(x=round(group_data.get_group(i)['Positive']/(population_dict[i]/1000000)), 
                            y=round(group_data.get_group(i)['Total Tested']/(population_dict[i]/1000000)), mode="lines",
@@ -446,20 +278,9 @@ def get_tpm_cpm_graph():
     
     return fig
 
-def get_tpm_cpm_table():
-    #table
-    table_data = {'State': {},
-                  'Test Per Million':{},
-                  'Case Per Million':{}
-           }
-    data_table = pd.DataFrame(table_data) 
-    group_data,population_dict = get_tpm_cpm_data()
-    for i in group_data.groups.keys():
-        row = [i,round(group_data.get_group(i)['Total Tested']/(population_dict[i]/1000000)).tail(1).values[0],
-          round(group_data.get_group(i)['Positive']/(population_dict[i]/1000000)).tail(1).values[0]]
-        data_table.loc[len(data_table)] = row
-    return data_table
-def get_tpm_cpm_combined():
+def get_tpm_cpm_combined(data_set):
+
+    group_data, population_dict = test_efficiency.get_tpm_cpm_data(data_set)
     
     card = dbc.Card(
         [
@@ -468,11 +289,11 @@ def get_tpm_cpm_combined():
                     [
                        dcc.Tab(label='Graph', children=[
                                 dcc.Graph(
-                                    figure = get_tpm_cpm_graph(),
+                                    figure = get_tpm_cpm_graph(group_data, population_dict),
                                   config={'displayModeBar': False})
                             ]),
                         dcc.Tab(label='Table', children=[
-                                dbc.Table.from_dataframe(get_tpm_cpm_table(), striped=True, bordered=True, hover=True)
+                                dbc.Table.from_dataframe(test_efficiency.get_tpm_cpm_table(group_data, population_dict), striped=True, bordered=True, hover=True)
                             ]),
                         #dbc.Tab(label="Tab 2", tab_id="tab-2"),
                     ],
@@ -487,117 +308,17 @@ def get_tpm_cpm_combined():
     
     return card
 
-def get_test_per_positive_data():
-    last_updated_date = state_wise_daily_data.tail(1)['Date']
-    date_time_obj = datetime. strptime(last_updated_date.values[0], '%d-%b-%y')
-    last_updated_date = (date_time_obj + timedelta(days = 1)).strftime('%d-%b-%y')
-    #filtered_data = test_data[test_data['Updated On'] <= last_updated_date][['State','Tests per positive case']]
-    test_data.drop(test_data[test_data['Updated On'] == date.today().strftime('%d/%m/%Y')].index, inplace = True)
-    test_data['Test Positivity'] = (test_data['Total Tested']/test_data['Positive'])
-    test_per_positive_data = test_data.groupby('State')
-    return test_per_positive_data
-
-def get_fatality_state_wise_data():
-    table_data = {
-        'State':{},
-        'Fatality Rate':{},
-        'Test Per Positive Case':{}
-    }
-    data_table = pd.DataFrame(table_data)
-    cum_deceased_data = get_death_data().cumsum()
-    cum_confirmed_data = get_confirmed_data().cumsum()
-    test_per_positive_data = get_test_per_positive_data()
-    state_code_list = get_state_code_list()
-    previous_day = (date.today()  - timedelta(days = 1)).strftime('%d/%m/%Y')
-    for i in test_per_positive_data.groups.keys():
-        test_per_confirmed = test_per_positive_data.get_group(i).tail(30)
-        if i == 'Dadra and Nager Haveli and Daman and Diu':
-            i = 'DN & DU'
-        state_code = state_code_list[state_code_list['State']==i]['State_code'].values[0]
-        fatality_rate = ((cum_deceased_data[state_code]/cum_confirmed_data[state_code])*100).tail(30)
-        #table population
-        test_per_confirmed_latest = test_per_confirmed[test_per_confirmed['Updated On']==previous_day]['Test Positivity']
-        fatality_rate_latest = round(fatality_rate.tail(1).values[0],2)
-        row = [i,fatality_rate_latest,test_per_confirmed_latest]
-        data_table.loc[len(data_table)] = row
-        data_table.sort_values(by=['Fatality Rate'],ascending=False,inplace=True)
-    return data_table
-
-def get_fatality_state_wise_graph():
-    data_table = get_fatality_state_wise_data()
+def get_fatality_state_wise_graph(data_set):
+    data_table = fatality.get_fatality_state_wise_data(data_set,state_code_list)
     modeBarButtons = [['toImage']]
     fig = px.bar(data_table, x='State', y='Fatality Rate',width=500,
     	color='Fatality Rate', color_continuous_scale=px.colors.sequential.YlOrRd,
     	)
     fig.update_xaxes(tickangle=45,)
     return fig, data_table
-    
 
-def get_fatality_test_per_positive_graph():
-    #table
-    table_data = {'State': {},
-                  'Fatality Rate':{},
-                  'Test Per Positive Case':{}
-           }
-    data_table = pd.DataFrame(table_data)
-    data=[]
-    # fig = make_subplots(
-    # rows=1, cols=2,
-    # vertical_spacing=0.3,
-    # specs=[[{"type": "scatter"},{"type": "table"}]]
-    # )
-    cum_deceased_data = get_death_data().cumsum()
-    cum_confirmed_data = get_confirmed_data().cumsum()
-    test_per_positive_data = get_test_per_positive_data()
-    state_code_list = get_state_code_list()
-    previous_day = (date.today()  - timedelta(days = 1)).strftime('%d/%m/%Y')
-    for i in test_per_positive_data.groups.keys():
-        test_per_confirmed = test_per_positive_data.get_group(i).tail(30)
-        if i == 'Dadra and Nager Haveli and Daman and Diu':
-            i = 'DN & DU'
-        state_code = state_code_list[state_code_list['State']==i]['State_code'].values[0]
-        fatality_rate = ((cum_deceased_data[state_code]/cum_confirmed_data[state_code])*100).tail(30)
-        data.append(go.Scatter(x=test_per_confirmed['Test Positivity'], 
-                           y=fatality_rate, mode="lines",
-                           name=i))
-        #table population
-        test_per_confirmed_latest = test_per_confirmed[test_per_confirmed['Updated On']==previous_day]['Test Positivity']
-        #print(test_per_confirmed_latest)
-        fatality_rate_latest = round(fatality_rate.tail(1).values[0],2)
-        row = [i,fatality_rate_latest,test_per_confirmed_latest]
-        data_table.loc[len(data_table)] = row
-
-    # fig = go.Figure(data=data)
-
-    # fig.update_layout(
-    #     title={
-    #         'text': "Case Fatality Rate v/s Test Per Positive Case",
-    #         'y':0.9,
-    #         'x':0.3,
-    #         'xanchor': 'center',
-    #         'yanchor': 'top'},
-    #     xaxis={"fixedrange": True},
-    #     xaxis_title="Test per positive case",
-    #     yaxis_title="Case fatality rate",
-    #     legend_title="States",
-
-    # )
-    
-    # fig.add_trace(go.Table(
-    #     header=dict(
-    #         values=data_table.columns,
-    #         font=dict(size=10),
-    #         align="left"
-    #     ),
-    #     cells=dict(
-    #         values=[data_table[k].tolist() for k in data_table.columns],
-    #         align = "left")
-    # ),row=1,col=2
-    # )
-    return data_table
-
-def get_fatality_graph():
-	graph, table = get_fatality_state_wise_graph()
+def get_fatality_graph(data_set):
+	graph, table = get_fatality_state_wise_graph(data_set)
 	card = dbc.Card(
 		[
 		dbc.CardHeader(
@@ -683,6 +404,7 @@ inputs = html.Div(
     ],
 )
 def on_form_change(value):
+    state_wise_data = data_set['state_wise_data']
     data = state_wise_data.drop(state_wise_data[state_wise_data['State_code'].isin(['TT','UN'])==True].index)
     if value == 1:
     	return dcc.Graph(figure = get_total_confirmed_graph(data),config={
@@ -771,11 +493,11 @@ content = html.Div([
                 ),
 	    dbc.Alert([html.B([
 	    	html.P(["Someone is dying in every",
-	    		html.Span(get_death_rate(),style={"font-size":"50px","padding-left":"5px","padding-right":"5px"}),"in India!",
+	    		html.Span(alert.get_death_rate(data_set),style={"font-size":"50px","padding-left":"5px","padding-right":"5px"}),"in India!",
 	    		]),
 	    	],className="text-danger",style={"font-size":"25px"}),], color="danger",
 	    className="p-5 text-center",style={"font-size":"large","border-radius": "7px"}),
-	    html.Div(get_current_status_card(),id="status",),
+	    html.Div(get_current_status_card(data_set),id="status",),
 	    html.Div([html.P("An outbreak anywhere can go everywhere. We all need to pitch in to try to prevent cases both within ourselves and in our communities."),
         html.P("Flattening the curve is a public health strategy to slow down the spread of the SARS-CoV-2 virus during the COVID-19 pandemic. when virus spread goes up in an exponential way, at one point it exceeds the capacity of total health infrastructure can handle. it leads to failure of health care system of the nation.If individuals and communities take steps to slow the virus’s spread, that means the number of cases of COVID-19 will stretch out across a longer period of time.The number of cases at any given time doesn’t cross the  capacity of the our nation’s health care system to help everyone who’s very sick.Social distancing, wearing maks and washing hands can prevent the failure of health infrastructure")],
         ),
@@ -786,7 +508,7 @@ content = html.Div([
         dbc.CardBody(
             [
                	dbc.Row([
-	   	dbc.Col(html.Div(get_overall_status_card()),width="60%"),
+	   	dbc.Col(html.Div(get_overall_status_card(data_set)),width="60%"),
 	   	dbc.Col(html.Div([dcc.Graph(figure = get_covid_status_graph(),
 	                   config={'displayModeBar': False,}),
 	   	html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
@@ -828,7 +550,7 @@ content = html.Div([
         dbc.CardBody(
             [
                	dbc.Row([
-	   			dbc.Col(dcc.Graph(figure = get_tests_vs_positive_graph(),
+	   			dbc.Col(dcc.Graph(figure = get_tests_vs_positive_graph(data_set),
 	                              config={'displayModeBar': False}),
 	            ),
 	            dbc.Col(html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
@@ -850,7 +572,7 @@ content = html.Div([
                	dbc.Row(dbc.Col(html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
 	   		,className="text_style"))),
 	   		dbc.Row([
-	   		dbc.Col( get_tpm_cpm_combined(),
+	   		dbc.Col( get_tpm_cpm_combined(data_set),
 	           ),
 	   		]),
             ]
@@ -864,7 +586,7 @@ content = html.Div([
     #     dbc.CardBody(
     #         [
     #            	dbc.Row([
-	   # 			dbc.Col(dcc.Graph(figure = get_death_rate_graph(),
+	   # 			dbc.Col(dcc.Graph(figure = get_death_rate_graph(data_set),
 	   #                            config={'displayModeBar': False}),
 	   # 			),
 	   #          dbc.Col(html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
@@ -876,9 +598,10 @@ content = html.Div([
 	    
 	    html.Div([
 	    	html.H2("Fatality Rate",className="heading_style"),
-	    	html.Div(get_fatality_graph())
+	    	html.Div(get_fatality_graph(data_set))
 	    	],
 	    	className="pretty_container",id="fatality"),
+	    
 	    ],id="content")
 
 @app.callback(
@@ -891,6 +614,90 @@ def toggle_classname(n, classname):
         return "collapsed active"
     return ""
 
+navbar = dbc.NavbarSimple(
+    children=[
+        dbc.NavItem(dbc.NavLink("Page 1", href="#")),
+        dbc.DropdownMenu(
+            children=[
+                dbc.DropdownMenuItem("More pages", header=True),
+                dbc.DropdownMenuItem("Page 2", href="#"),
+                dbc.DropdownMenuItem("Page 3", href="#"),
+            ],
+            nav=True,
+            in_navbar=True,
+            label="More",
+        ),
+    ],
+    brand="Covid In India",
+    brand_href="#",
+    color="#8c8c8c",
+    fixed="top",
+    dark=True,
+)
+
+nav_header = dbc.Navbar(
+    [
+        html.A(
+            # Use row and col to control vertical alignment of logo / brand
+            dbc.Row(
+                [
+                    #dbc.Col(html.Img(src=PLOTLY_LOGO, height="30px")),
+                    dbc.Col(dbc.NavbarBrand("Covid In India", className="ml-2",style={"font-size":"30px"})),
+                ],
+                align="center",
+                no_gutters=True,
+            ),
+            href="/home",
+        ),
+        #dbc.NavItem(dbc.NavLink("Page 1", href="#fatality")),
+        # dbc.NavbarToggler(id="navbar-toggler"),
+        # dbc.Collapse(children=[dbc.NavItem(dbc.NavLink("Page 1", href="#fatality")),],id="navbar-collapse", navbar=True),
+    ],
+    color="#d9d9d9",
+    fixed="top",
+    #dark=True,
+)
+
+nav_footer = dbc.Navbar(
+    [
+        html.A(
+            # Use row and col to control vertical alignment of logo / brand
+            dbc.Row(
+                [
+                    #dbc.Col(html.Img(src=PLOTLY_LOGO, height="30px")),
+                    dbc.Col(dbc.NavbarBrand("Covid In India", className="ml-2",style={"font-size":"30px"})),
+                ],
+                align="center",
+                no_gutters=True,
+            ),
+            href="/home",
+        ),
+        #dbc.NavItem(dbc.NavLink("Page 1", href="#fatality")),
+        # dbc.NavbarToggler(id="navbar-toggler"),
+        # dbc.Collapse(children=[dbc.NavItem(dbc.NavLink("Page 1", href="#fatality")),],id="navbar-collapse", navbar=True),
+    ],
+    color="#d9d9d9",
+    sticky ="bottom",
+    #dark=True,
+)
+
+footer = html.Footer([
+	html.Div([
+		html.P("Send your feedback to covidindiadash@gmail.com",),
+		html.P("Disclaimer: The information provided by this site is solely based on the data from https://www.covid19india.org/.",
+			)
+		],className="footer"),
+	])
+
+# @app.callback(
+#     Output("navbar-collapse", "is_open"),
+#     [Input("navbar-toggler", "n_clicks")],
+#     [State("navbar-collapse", "is_open")],
+# )
+# def toggle_navbar_collapse(n, is_open):
+#     if n:
+#         return not is_open
+#     return is_open
 
 # @app.callback(
 #     Output("collapse", "is_open"),
@@ -902,13 +709,26 @@ def toggle_classname(n, classname):
 #         return not is_open
 #     return is_open
 
-app.layout = html.Div([
-	    #dcc.Location(id='url', refresh=True),
+final_body = html.Div([
+	    dcc.Location(id='url', refresh=True),
 		#html.Div(nav),
+		html.Div(nav_header),
 		sidebar,
-    	content,   
+    	content,
 ],className="wrapper",
 )
+
+app.layout = html.Div([
+
+	dbc.Row(
+		dbc.Col(final_body)
+		),
+	dbc.Row(
+		dbc.Col(html.Div(footer))
+		)
+	
+	])
+
 
 if __name__ == '__main__':
     app.run_server(debug=True)
