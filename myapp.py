@@ -18,6 +18,8 @@ from datetime import timedelta
 
 import math
 import locale
+#import schedule
+import time
 
 from apps import scheduler, utility, alert, covid_curve, test_positivity, death_rate, test_efficiency, fatality
 
@@ -34,10 +36,10 @@ def get_current_status_card(data_set):
             html.Div(
                 [	html.H6("Confirmed",className="text-center"),
                     html.Div(
-                        "{0:n}".format(daily_data["Daily Confirmed"].values[0]),
+                        html.Strong(f"{int(daily_data['Daily Confirmed'].values[0]):,d}"),
                         className="card-text text-center",
                     ),
-                ],className="w-30",style={"background-color":"#ffd6cc","border-radius": "10px",
+                ],className="w-30",style={"background-color":"#ffd6cc",
                 						 "box-shadow": "2px 2px 2px lightgrey"}
             )
         ]
@@ -46,10 +48,10 @@ def get_current_status_card(data_set):
                 [
                 	html.H6("Recovered",className="text-center"),
                     html.P(
-                        "{0:n}".format(daily_data["Daily Recovered"].values[0]),
+                        html.Strong(f"{int(daily_data['Daily Recovered'].values[0]):,d}"),
                         className="card-text text-center",
                     ),
-                ],className="w-10",style={"background-color":"#d9f2d9","border-radius": "10px", 
+                ],className="w-10",style={"background-color":"#d9f2d9",
                 						 "box-shadow": "2px 2px 2px lightgrey"}
             )
         ]
@@ -57,10 +59,10 @@ def get_current_status_card(data_set):
             html.Div(
                 [	html.H6("Deceased",className="text-center"),
                     html.P(
-                        "{0:n}".format(daily_data["Daily Deceased"].values[0]),
+                        html.Strong(f"{int(daily_data['Daily Deceased'].values[0]):,d}"),
                         className="card-text text-center",
                     ),
-                ],className="w-10",style={"background-color":"#d9d9d9", "border-radius": "10px",
+                ],className="w-10",style={"background-color":"#d9d9d9",
                 						  "box-shadow": "2px 2px 2px lightgrey"}
             )
         ]
@@ -155,11 +157,11 @@ def get_covid_status_graph():
     line_color='mediumaquamarine'
     ))
     fig.update_layout(
-    paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(0,0,0,0)',
+    # paper_bgcolor='rgba(0,0,0,0)',
+    # plot_bgcolor='rgba(0,0,0,0)',
     xaxis={"fixedrange": True},
     title={
-            'text': "Covid Status in India",
+            'text': "Covid Curve in India",
             'y':0.9,
             'x':0.3,
             'xanchor': 'center',
@@ -186,19 +188,19 @@ def get_overall_status_card(data_set):
 
     return html.Div(children=[
     	html.Div([html.H6("Total Confirmed", className="text-danger text-center"),
-           		html.P("{0:n}".format(cumulative_status_data['Total Confirmed']),className="text-danger text-center",)],
+           		html.P(html.Strong(f"{int(cumulative_status_data['Total Confirmed']):,d}"),className="text-danger text-center",style={"font-size":"15px"})],
            		className="mini_container",),
 
     	html.Div([html.H6("Active Cases", className="text-info text-center"),
-           		html.P("{0:n}".format(cumulative_status_data['Active']),className="text-info text-center")],
+           		html.P(html.Strong(f"{int(cumulative_status_data['Active']):,d}"),className="text-info text-center",style={"font-size":"15px"})],
            		className="mini_container",),
 
     	html.Div([html.H6("Total Recovered", className="text-success text-center"),
-           		html.P("{0:n}".format(cumulative_status_data['Total Recovered']),className="text-success text-center")],
+           		html.P(html.Strong(f"{int(cumulative_status_data['Total Recovered']):,d}"),className="text-success text-center",style={"font-size":"15px"})],
            		className="mini_container",),
 
     	html.Div([html.H6("Total Deceased",className="text-muted text-center"),
-           		html.P("{0:n}".format(cumulative_status_data['Total Deceased']),className="text-muted text-center")],
+           		html.P(html.Strong(f"{int(cumulative_status_data['Total Deceased']):,d}"),className="text-muted text-center",style={"font-size":"15px"})],
            		className="mini_container",),
    		],className="two columns")
 
@@ -290,7 +292,11 @@ def get_tpm_cpm_combined(data_set):
                        dcc.Tab(label='Graph', children=[
                                 dcc.Graph(
                                     figure = get_tpm_cpm_graph(group_data, population_dict),
-                                  config={'displayModeBar': False})
+                                  config={
+					        'modeBarButtons': [['toImage']],
+					        'displaylogo': False,
+					        'displayModeBar': True
+					    })
                             ]),
                         dcc.Tab(label='Table', children=[
                                 dbc.Table.from_dataframe(test_efficiency.get_tpm_cpm_table(group_data, population_dict), striped=True, bordered=True, hover=True)
@@ -374,6 +380,29 @@ def get_total_deaths_graph(state_wise_data):
 	fig.update_xaxes(tickangle=45,)
 	return fig
 
+def get_critical_trends(data_set):
+	
+	daily_data = alert.get_daily_data(data_set)
+	status = "In last 24hrs, there are "+ f"{int(daily_data['Daily Confirmed'].values[0]):,d}" + " Confirmed cases, "+f"{int(daily_data['Daily Recovered'].values[0]):,d}" + " are Recovered and "+f"{int(daily_data['Daily Deceased'].values[0]):,d}" + " Deaths"+" in India"
+
+	cumulative_status_data = covid_curve.get_cumulative_status_data(data_set)
+	status = status + "Total Confirmed: "+ f"{int(cumulative_status_data['Total Confirmed']):,d}"+" , Total Active: " + f"{int(cumulative_status_data['Active']):,d}"+" , Total Recovered: " + f"{int(cumulative_status_data['Total Recovered']):,d}"+" and Total Deceased: " + f"{int(cumulative_status_data['Total Confirmed']):,d}"
+
+	test_positivity = "The test positivity rate as per dd-mm-yyyy is x%. This shows that India should (increase/decrease) the number of tests."
+
+	test_efficiency = "In terms of efficiency of tests, as per the latest data, x,y,z is fairly performing while a,b,c to take serious measures to increase the number of tests as early as possible."
+
+	fatality_rate = "On the analysis of the fatality rate, states such as x.y,z are currently capable of reducing the number of deaths while a,b,c are falling behind increasing the risk."
+	
+	trends = html.Ul([
+         html.Li(html.Div(status,className="bullet_text_style",)),
+         html.Li(html.Div(test_positivity,className="bullet_text_style")),
+         html.Li(html.Div(test_efficiency,className="bullet_text_style")),
+         html.Li(html.Div(fatality_rate,className="bullet_text_style"))
+		])
+
+	return trends
+
 radioitems = dbc.FormGroup(
     [
         dbc.RadioItems(
@@ -384,6 +413,8 @@ radioitems = dbc.FormGroup(
             ],
             value=1,
             id="radioitems-input",
+            labelClassName="date-group-labels",
+            labelCheckedClassName="date-group-labels-checked",
             inline=True,
         ),
     ]
@@ -427,37 +458,15 @@ def on_form_change(value):
 
 sidebar_header = dbc.Row(
     [
-        dbc.Col(html.H2("Explore", className="display-4")),
-        dbc.Col(
-            [
-                
-                # html.Button(
-                #     # use the Bootstrap navbar-toggler classes to style
-                #     html.Span(className="navbar-toggler-icon"),
-                    
-                #     # the navbar-toggler classes don't set color
-                #     style={
-                #         "color": "#ffb3b3",
-                #         "border-color": "rgba(0,0,0,.1)",
-                #         "background-color":"#cccccc",
-                #         "width":"30px"
-                #     },
-                #     id="sidebar-toggle",
-                # ),
-            ],
-            # the column containing the toggle will be only as wide as the
-            # toggle, resulting in the toggle being right aligned
-            width="auto",
-            # vertically align the toggle in the center
-            align="center",
-        ),
+        dbc.Col(html.H2("Explore", className="display-4",style={"text-decoration": "underline"})),
     ]
 )
 
 sidebar = html.Div(
     children=[
+    html.Div([
         sidebar_header,
-        html.Hr(),
+        #html.Hr(),
         # dbc.Collapse(
         dbc.Nav(
             [
@@ -466,13 +475,19 @@ sidebar = html.Div(
                 dbc.NavLink("Test Positivity", href="#test-positivity", id="test-positivity-link",external_link=True),
                 dbc.NavLink("Test Efficiency", href="#tpm-cpm", id="tpm-cpm-link",external_link=True),
                 dbc.NavLink("Fatality Rate", href="#fatality", id="fatality-link",external_link=True),
+                dbc.NavLink("Critical Trends", href="#critical_trends", id="critical-trends-link",external_link=True),
+                
             ],
             vertical=True,
             pills=True,
-            style={"font-size":"22px"}
+            style={"font-size":"18px"},
+            
         ),
         # )
-    ],id="sidebar"
+        ],className="sidebar-toggle",
+        )
+    ],id="sidebar",
+
 )
 
 content = html.Div([
@@ -481,26 +496,21 @@ content = html.Div([
     	html.Button(
                     # use the Bootstrap navbar-toggler classes to style
                     html.Span(className="navbar-toggler-icon"),
-                    
-                    # the navbar-toggler classes don't set color
-                    style={
-                        "color": "#ffb3b3",
-                        "border-color": "rgba(0,0,0,.1)",
-                        "background-color":"#cccccc",
-                        "width":"30px"
-                    },
-                    id="sidebar-toggle",
+                    className="sidebar-toggle sidebar-button",
+                    id="toggle-sidebar"
                 ),
+    	html.Div([
 	    dbc.Alert([html.B([
-	    	html.P(["Someone is dying in every",
-	    		html.Span(alert.get_death_rate(data_set),style={"font-size":"50px","padding-left":"5px","padding-right":"5px"}),"in India!",
+	    	html.P([html.P("Someone is dying in every",),
+	    		html.P([html.Span(alert.get_death_rate(data_set),style={"font-size":"30px","font-family": "Catamaran","padding-left":"5px","padding-right":"5px"}),]),
+	    		html.P(["in ", html.Span("India!",style={"font-size":"25px","font-family": "Catamaran","padding-left":"5px",}),]),
 	    		]),
-	    	],className="text-danger",style={"font-size":"25px"}),], color="danger",
+	    	],className="text-danger",style={"font-size":"25px","font-family": "Catamaran"}),], color="danger",
 	    className="p-5 text-center",style={"font-size":"large","border-radius": "7px"}),
 	    html.Div(get_current_status_card(data_set),id="status",),
-	    html.Div([html.P("An outbreak anywhere can go everywhere. We all need to pitch in to try to prevent cases both within ourselves and in our communities."),
-        html.P("Flattening the curve is a public health strategy to slow down the spread of the SARS-CoV-2 virus during the COVID-19 pandemic. when virus spread goes up in an exponential way, at one point it exceeds the capacity of total health infrastructure can handle. it leads to failure of health care system of the nation.If individuals and communities take steps to slow the virus’s spread, that means the number of cases of COVID-19 will stretch out across a longer period of time.The number of cases at any given time doesn’t cross the  capacity of the our nation’s health care system to help everyone who’s very sick.Social distancing, wearing maks and washing hands can prevent the failure of health infrastructure")],
-        ),
+	    html.Div([html.P(html.Strong("An outbreak anywhere can go everywhere. We all need to pitch in to try to prevent cases both within ourselves and in our communities.",className="text_style",style={"padding-bottom":"5px","padding-top":"10px"}),style={"text-align": "center","padding-top":"10px"}),
+        html.P("Flattening the curve is a public health strategy to slow down the spread of the SARS-CoV-2 virus during the COVID-19 pandemic. when virus spread goes up in an exponential way, at one point it exceeds the capacity of total health infrastructure can handle. it leads to failure of health care system of the nation.If individuals and communities take steps to slow the virus’s spread, that means the number of cases of COVID-19 will stretch out across a longer period of time.The number of cases at any given time doesn’t cross the  capacity of the our nation’s health care system to help everyone who’s very sick.Social distancing, wearing maks and washing hands can prevent the failure of health infrastructure",className="text_style")],
+        className="pretty_container"),
 	   	html.Div([
 	   		 dbc.Card(
         [
@@ -510,9 +520,15 @@ content = html.Div([
                	dbc.Row([
 	   	dbc.Col(html.Div(get_overall_status_card(data_set)),width="60%"),
 	   	dbc.Col(html.Div([dcc.Graph(figure = get_covid_status_graph(),
-	                   config={'displayModeBar': False,}),
-	   	html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
-	   		,style={"padding":"20px","font-size":"large"})]
+	                   config={
+					        'modeBarButtons': [['toImage']],
+					        'displaylogo': False,
+					        'displayModeBar': True
+					    }),
+	   	html.Div([html.P("The goal of every nation is to flatten the covid curve by reducing the number of cases and finally reaching to zero. This plot depicts how India responds to covid day by day. The cumulative number of covid cases is plotted against the day since the first covid case reported on January 30, 2020. It also shows the total number of recovered and deceased till today."),
+	   	 html.P("This also indicates how the covid cases are rapidly increasing after each unlock phase. Here comes the question, whether the lockdown was really efficient in containing the pandemic?"),
+	   	 html.P("One thing to be noted is the number of confirmed cases is lower than the actual cases due to limited testing. Also, the reported cases on a date may not necessarily be the actual number of cases on that day due to delayed reporting.")]
+	   		,className="text_style")]
 	   	))],className="mb-4"),
             ]
         ),
@@ -532,11 +548,16 @@ content = html.Div([
         dbc.CardBody(
             [
                	dbc.Row(
+	            dbc.Col(html.Div(html.P("The purpose of this graph is to give a picture of the states affected by covid. This helps to gauge each state in terms of confirmed cases, active cases, and deaths. ")
+        		,className="text_style"),)
+	            ),
+               	dbc.Row(
 	   			dbc.Col(html.Div([inputs]),className="center-container")
 	   			),
 	            dbc.Row(
 	            dbc.Col(html.Div(id="radio-items"),)
-	            )
+	            ),
+
             ]
         ),
     ],)
@@ -551,9 +572,17 @@ content = html.Div([
             [
                	dbc.Row([
 	   			dbc.Col(dcc.Graph(figure = get_tests_vs_positive_graph(data_set),
-	                              config={'displayModeBar': False}),
+	                              config={
+					        'modeBarButtons': [['toImage']],
+					        'displaylogo': False,
+					        'displayModeBar': True
+					    }),
 	            ),
-	            dbc.Col(html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
+	            dbc.Col(html.Div([html.P("Is India performing adequate tests?"),
+	            	html.P("Since tests are the only means to identify covid cases, a country needs to perform tests on a maximum number of people, which would help to know the degree of spread in an area. In an ideal case, it should test all the people in the country. But this is not practical due to the limited testing facilities."),
+	            	html.P("The test positivity rate is a measure of the spread of the infectious virus in an area. It throws light on the size of the outbreak and the requirement to increase the tests. According to WHO, the test positivity rate should be lower than 10%, but better less than 3% as a benchmark for adequate testing. In other words, 10 - 30 tests per confirmed case indicates a fair level of testing."),
+	            	html.P("If the positivity rate does not fall within this benchmark, it indicates that the country is not performing adequate tests. And the reported positive cases are only a fraction of the actual cases."),
+	            	html.P("This graph shows the total number of cases, confirmed cases, and test positivity rate each day, for the past two weeks. India has a test positivity rate of x%.")]
 	   		,className="text_style"),className="center-container")
 	            ])
             ]
@@ -569,7 +598,9 @@ content = html.Div([
         dbc.CardHeader("Test Efficiency",style={"font-size":"30px"}),
         dbc.CardBody(
             [
-               	dbc.Row(dbc.Col(html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
+               	dbc.Row(dbc.Col(html.Div([html.P("Why testing is very much essential? As we all know, in the current scenario where exact methods to tackle the pandemic are still uncertain and the whole world is trying hard to get a medicine for the same, the only way to contain the virus is by testing extensively to track the infectious people. In that light, Test per million and Case per million would give us an idea about the spread of the virus. "),
+               		html.P("The graph shows the tests per million(vertical axis) v/s cases per million(horizontal axis) for different states daily from April 17, 2020. Steeper the line in the upward direction, testing in those states is relatively higher than the confirmed cases, which is the desirable condition. Otherwise, it shows that the testing is insufficient in those states, and the number of actual cases in those states might be far higher."),
+               		html.P("The table gives the present tests per million and cases per million of each state.")]
 	   		,className="text_style"))),
 	   		dbc.Row([
 	   		dbc.Col( get_tpm_cpm_combined(data_set),
@@ -598,15 +629,23 @@ content = html.Div([
 	    
 	    html.Div([
 	    	html.H2("Fatality Rate",className="heading_style"),
-	    	html.Div(get_fatality_graph(data_set))
+	    	html.Div([html.P("How crucial is the pandemic? To understand the risk and to timely respond, we would also need to get the mortality rate. This parameter depicts the fact that how likely someone who catches the disease would die. This is measured by taking the ratio of total confirmed deaths by the total confirmed cases. But during the pandemic, it would be really difficult to analyze the risk of the pandemic by looking at the fatality rate, since the data might be incomplete. Here, the plot compares various states on the fatality rate. States like xxx, being at the top."),
+	    		html.P("Test per positive case is a measure of how effectively testing is done in a state. The lower the number, testing is more efficient and extensive in those states. States like XXXX are performing well while YYYYare falling behind.")]
+	    		,className="text_style"),
+	    	html.Div(get_fatality_graph(data_set)),
 	    	],
 	    	className="pretty_container",id="fatality"),
+
+	    html.Div([
+            html.H2("Critical Trends", className="heading_style"),
+            html.Div(get_critical_trends(data_set))
+        	],className="pretty_container",id="critical_trends")
 	    
-	    ],id="content")
+	    ],id="content",className="container")])
 
 @app.callback(
     Output("sidebar", "className"),
-    [Input("sidebar-toggle", "n_clicks")],
+    [Input("toggle-sidebar", "n_clicks")],
     [State("sidebar", "className")],
 )
 def toggle_classname(n, classname):
@@ -660,23 +699,13 @@ nav_header = dbc.Navbar(
 
 nav_footer = dbc.Navbar(
     [
-        html.A(
-            # Use row and col to control vertical alignment of logo / brand
-            dbc.Row(
-                [
-                    #dbc.Col(html.Img(src=PLOTLY_LOGO, height="30px")),
-                    dbc.Col(dbc.NavbarBrand("Covid In India", className="ml-2",style={"font-size":"30px"})),
-                ],
-                align="center",
-                no_gutters=True,
-            ),
-            href="/home",
-        ),
-        #dbc.NavItem(dbc.NavLink("Page 1", href="#fatality")),
-        # dbc.NavbarToggler(id="navbar-toggler"),
-        # dbc.Collapse(children=[dbc.NavItem(dbc.NavLink("Page 1", href="#fatality")),],id="navbar-collapse", navbar=True),
-    ],
-    color="#d9d9d9",
+        html.Div([
+		html.P("Send your feedback to covidindiadash@gmail.com",),
+		html.P("Disclaimer: The information provided by this site is solely based on the data from https://www.covid19india.org/.",
+			)
+		],className="footer"),
+	],
+    # color="#d9d9d9",
     sticky ="bottom",
     #dark=True,
 )
@@ -719,13 +748,15 @@ final_body = html.Div([
 )
 
 app.layout = html.Div([
+	final_body,
+	footer
 
-	dbc.Row(
-		dbc.Col(final_body)
-		),
-	dbc.Row(
-		dbc.Col(html.Div(footer))
-		)
+	# dbc.Row(
+	# 	dbc.Col(final_body)
+	# 	),
+	# dbc.Row(
+	# 	dbc.Col(html.Div(nav_footer))
+	# 	)
 	
 	])
 
