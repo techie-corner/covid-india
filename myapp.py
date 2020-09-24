@@ -18,26 +18,73 @@ from datetime import timedelta
 
 import math
 import locale
-#import schedule
+import scheduler
 import time
 
-from apps import scheduler, utility, alert, covid_curve, test_positivity, death_rate, test_efficiency, fatality
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from apscheduler.schedulers.background import BackgroundScheduler
+
+from apps import utility, alert, covid_curve, test_positivity, death_rate, test_efficiency, fatality, state_layout
+
+sched = BackgroundScheduler()
 
 app = dash.Dash(__name__,title="Covid in India",external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
 
+app.scripts.config.serve_locally = False
+app.scripts.append_script({
+    'external_url': 'http://www.covidanalyticsindia.org/assets/async_src.js'
+})
+app.scripts.append_script({
+    'external_url': 'http://www.covidanalyticsindia.org/assets/gtag.js'
+})
+
+UPDATE_INTERVAL = 30
 #to get csv data
-data_set = scheduler.get_data()
+def get_data():
+    global data_set
+    print("in get_data")
+    data_set = scheduler.get_data()
+
+get_data()
+
+def get_fatality_state_wise_graph(data_set):
+    data_table = fatality.get_fatality_state_wise_data(data_set,state_code_list)
+    modeBarButtons = [['toImage']]
+    fig = px.bar(data_table, x='State', y='Fatality Rate',width=500,
+        color='Fatality Rate', color_continuous_scale=px.colors.sequential.YlOrRd,
+        )
+    fig.update_xaxes(tickangle=45,)
+    return fig, data_table
+
+def get_data_dict(data_set):
+    data_dict = ""
+    data_dict = dict(data_dict)
+    data_dict['daily_status'] = alert.get_daily_data(data_set)
+    data_dict['cumulative_status'] = covid_curve.get_cumulative_status_data(data_set)
+    data_dict['test positivity'] = test_positivity.get_tests_vs_positive_data(data_set)
+    data_dict['tpm_cpm_graph_data'] = test_efficiency.get_tpm_cpm_data(data_set)
+    data_dict['tpm_cpm_table_data'] = test_efficiency.get_tpm_cpm_table(data_dict['tpm_cpm_graph_data'][0], data_dict['tpm_cpm_graph_data'][1] , data_set)
+    data_dict['fatality'] = get_fatality_state_wise_graph(data_set)
+    return data_dict
+
 state_code_list = utility.get_state_code_list(data_set)
+test_positivity_rate = None
+best_states_tpm = None
+worst_states_tpm = None
+worst_states_death_rate=None
+best_states_death_rate=None
+data_dict = get_data_dict(data_set)
+
 
 def get_current_status_card(data_set):
-    daily_data = alert.get_daily_data(data_set)
+    daily_data = data_dict['daily_status']
     card_content_confirmed = [
             html.Div(
                 [	html.H6("Confirmed",className="text-center"),
                     html.Div(
                         html.Strong(f"{int(daily_data['Daily Confirmed'].values[0]):,d}"),
-                        className="card-text text-center",
+                        className="card-text text-center"
                     ),
                 ],className="w-30",style={"background-color":"#ffd6cc",
                 						 "box-shadow": "2px 2px 2px lightgrey"}
@@ -142,7 +189,7 @@ def get_covid_status_graph():
     textposition="top center",
      hoverinfo='none',
     showlegend=False,
-    line_color='#00b300'
+    line_color='#ff751a'
     ))
 
     fig.add_trace(go.Scatter(
@@ -152,9 +199,33 @@ def get_covid_status_graph():
     name="Unlock 2.0",
     text=["Unlock 2.0"],
     textposition="top center",
+    hoverinfo='none',
+    showlegend=False,
+    line_color='#ffcc00'
+    ))
+
+    fig.add_trace(go.Scatter(
+    x=["01 August ", "01 August "],
+    y=[case_time_series_data["Total Confirmed"].max(),0],
+    mode="lines+text",
+    name="Unlock 3.0",
+    text=["Unlock 3.0"],
+    textposition="top center",
      hoverinfo='none',
     showlegend=False,
-    line_color='mediumaquamarine'
+    line_color='#99ff33'
+    ))
+
+    fig.add_trace(go.Scatter(
+    x=["01 September ", "01 September "],
+    y=[case_time_series_data["Total Confirmed"].max(),0],
+    mode="lines+text",
+    name="Unlock 4.0",
+    text=["Unlock 4.0"],
+    textposition="top center",
+     hoverinfo='none',
+    showlegend=False,
+    line_color='#1f7a1f'
     ))
     fig.update_layout(
     # paper_bgcolor='rgba(0,0,0,0)',
@@ -184,7 +255,7 @@ def get_covid_status_graph():
 
 def get_overall_status_card(data_set):
     
-    cumulative_status_data = covid_curve.get_cumulative_status_data(data_set)
+    cumulative_status_data = data_dict['cumulative_status']
 
     return html.Div(children=[
     	html.Div([html.H6("Total Confirmed", className="text-danger text-center"),
@@ -206,21 +277,23 @@ def get_overall_status_card(data_set):
 
 
 def get_tests_vs_positive_graph(data_set):
-   # Create figure with secondary y-axis
+   
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    df = test_positivity.get_tests_vs_positive_data(data_set)
+    df,current_date,current_rate = data_dict['test positivity']
     fig.add_trace(go.Bar(
         x=df["Date"], 
         y=df['Positive'],
         name="Positive Cases",
-        marker={'color': '#ff704d'}
+        marker={'color': '#ff704d'},
+        width=0.8
     ), secondary_y=False)
 
     fig.add_trace(go.Bar(
         x=df["Date"], 
         y=df['Number Of Tests'],
         name="Number of tests",
-        marker={'color': '#8585ad'}
+        marker={'color': '#8585ad'},
+        width=0.8
     ), secondary_y=False)
 
 
@@ -229,7 +302,7 @@ def get_tests_vs_positive_graph(data_set):
     x=df['Date'],
     y=df['Positivity Rate'],
     mode="lines",
-    name="Positivity Rate (in %)",
+    name="Positivity Rate",
     line_color='#ffbf00'
     ), secondary_y=True)
 
@@ -237,8 +310,8 @@ def get_tests_vs_positive_graph(data_set):
     fig.update_layout(barmode='stack',title = "Daily Tests vs Positive Cases",
     	 xaxis={"fixedrange": True},
         autosize=True,
-       # width=800,
-       # height=500
+        width=700,
+        height=600,
         margin=dict(
             l=50,
             r=50,
@@ -259,31 +332,20 @@ def get_tpm_cpm_graph(group_data, population_dict):
 
 
     fig.update_layout(
-        title= "Test Per Million v/s Case Per Million",
+        title= "Tests Per Million v/s Cases Per Million",
         xaxis={"fixedrange": True},
-        # {
-        #     'text': "Test Per Million v/s Case Per Million",
-        #     'y':0.9,
-        #     'x':0.3,
-        #     'xanchor': 'center',
-        #     'yanchor': 'top'},
-
-        xaxis_title="Case Per Million",
-        yaxis_title="Test per million",
+        xaxis_title="Cases Per Million",
+        yaxis_title="Tests per million",
         legend_title="States",
-        # font=dict(
-        #     family="Courier New, monospace",
-        #     size=15,
-        #     color="RebeccaPurple"
-        # )
     )
     
     return fig
 
 def get_tpm_cpm_combined(data_set):
 
-    group_data, population_dict = test_efficiency.get_tpm_cpm_data(data_set)
-    
+    group_data, population_dict = data_dict['tpm_cpm_graph_data']
+    data_table = data_dict['tpm_cpm_table_data']
+
     card = dbc.Card(
         [
             dbc.CardHeader(
@@ -299,7 +361,7 @@ def get_tpm_cpm_combined(data_set):
 					    })
                             ]),
                         dcc.Tab(label='Table', children=[
-                                dbc.Table.from_dataframe(test_efficiency.get_tpm_cpm_table(group_data, population_dict), striped=True, bordered=True, hover=True)
+                                dbc.Table.from_dataframe(data_table, striped=True, bordered=True, hover=True)
                             ]),
                         #dbc.Tab(label="Tab 2", tab_id="tab-2"),
                     ],
@@ -314,17 +376,41 @@ def get_tpm_cpm_combined(data_set):
     
     return card
 
-def get_fatality_state_wise_graph(data_set):
-    data_table = fatality.get_fatality_state_wise_data(data_set,state_code_list)
-    modeBarButtons = [['toImage']]
-    fig = px.bar(data_table, x='State', y='Fatality Rate',width=500,
-    	color='Fatality Rate', color_continuous_scale=px.colors.sequential.YlOrRd,
-    	)
-    fig.update_xaxes(tickangle=45,)
-    return fig, data_table
+def get_tpm_state_comparison(data_table):
+     #worst performing states-tpm
+    data_table_sorted = data_table.sort_values(by=['Tests Per Million']).dropna(subset=['Tests Per Million'])
+    states= []
+    for i in data_table_sorted['State'].head(5):
+        states.append(i)
+    worst_states_tpm = ','.join([str(elem) for elem in states])
+
+    #best performing states-tpm
+    states=[]
+    for i in data_table_sorted['State'].tail(5):
+        states.append(i)
+    best_states_tpm = ','.join([str(elem) for elem in states])
+
+    return best_states_tpm, worst_states_tpm
+
+def get_cpm_state_comparison(data_table):
+     #best performing states-tpm
+    data_table_sorted = data_table.sort_values(by=['Cases Per Million']).dropna(subset=['Cases Per Million'])
+    states= []
+    for i in data_table_sorted['State'].head(5):
+        states.append(i)
+    best_states_cpm = ','.join([str(elem) for elem in states])
+
+    #worst performing states-tpm
+    states=[]
+    for i in data_table_sorted['State'].tail(5):
+        states.append(i)
+    worst_states_cpm = ','.join([str(elem) for elem in states])
+
+    return best_states_cpm, worst_states_cpm
 
 def get_fatality_graph(data_set):
-	graph, table = get_fatality_state_wise_graph(data_set)
+	graph, table = data_dict['fatality']
+	states= []
 	card = dbc.Card(
 		[
 		dbc.CardHeader(
@@ -348,6 +434,37 @@ def get_fatality_graph(data_set):
 		dbc.CardBody(html.P(id="card-fatality-content", className="card-text")),
 		])
 	return card
+
+def get_fatality_rate_state_comparison(table):
+    #best performing states - death rate
+    states=[]
+    for i in table['State'].tail(5):
+        states.append(i)
+    best_states_death_rate = ','.join([str(elem) for elem in states])
+
+    #worst performing states-death rate
+    states=[]
+    for i in table['State'].head(5):
+        states.append(i)
+    worst_states_death_rate = ','.join([str(elem) for elem in states])
+
+    return best_states_death_rate, worst_states_death_rate
+
+def get_test_per_positive_state_comparison(data_table):
+    table = data_table.sort_values(by=['Test Per Positive Case']).dropna(subset=['Test Per Positive Case'])
+    #best performing states - death rate
+    states=[]
+    for i in table['State'].tail(5):
+        states.append(i)
+    best_states = ','.join([str(elem) for elem in states])
+
+    #worst performing states-death rate
+    states=[]
+    for i in table['State'].head(5):
+        states.append(i)
+    worst_states = ','.join([str(elem) for elem in states])
+
+    return best_states, worst_states
 
 def get_total_confirmed_graph(state_wise_data):
     confirmed_data = state_wise_data.sort_values(by=['Confirmed'],ascending=False)
@@ -380,28 +497,145 @@ def get_total_deaths_graph(state_wise_data):
 	fig.update_xaxes(tickangle=45,)
 	return fig
 
+def get_critical_trends_toast(better_states_heading, worst_states_heading,best_states, worst_states):
+
+    content = html.Div([
+        html.Div([html.Span(html.B(better_states_heading),style={"font-size":"20px"}),
+            html.Br(),
+            html.Span(best_states,style={"font-size":"15px","word-wrap": "break-word"})],style={"background-color":"#8dd88d"}),
+        html.Div([
+            html.Span(html.B(worst_states_heading),style={"font-size":"20px"}),
+            html.Br(),
+            html.Span(worst_states,style={"font-size":"15px","word-wrap": "break-word"})],style={"background-color":"#ff9980"})
+        ],)
+
+    return content
+
+def get_status_toast(today_status, total):
+
+     list_group = dbc.ListGroup(
+    [
+        dbc.ListGroupItem(
+            html.Span([html.Span("In the past 24 hrs: "),
+                    html.Strong(f"{int(today_status):,d}")], style={"font-size":"18px","color":"white"}
+            ), style={"background-color":"black"}),
+
+        dbc.ListGroupItem(
+            html.Span([html.Span("Total: "),
+                    html.Strong(f"{int(total):,d}")],style={"font-size":"18px","color":"white"}
+            ), style={"background-color":"black"}),
+        ])
+     return list_group
+
 def get_critical_trends(data_set):
-	
-	daily_data = alert.get_daily_data(data_set)
-	status = "In last 24hrs, there are "+ f"{int(daily_data['Daily Confirmed'].values[0]):,d}" + " Confirmed cases, "+f"{int(daily_data['Daily Recovered'].values[0]):,d}" + " are Recovered and "+f"{int(daily_data['Daily Deceased'].values[0]):,d}" + " Deaths"+" in India"
 
-	cumulative_status_data = covid_curve.get_cumulative_status_data(data_set)
-	status = status + "Total Confirmed: "+ f"{int(cumulative_status_data['Total Confirmed']):,d}"+" , Total Active: " + f"{int(cumulative_status_data['Active']):,d}"+" , Total Recovered: " + f"{int(cumulative_status_data['Total Recovered']):,d}"+" and Total Deceased: " + f"{int(cumulative_status_data['Total Confirmed']):,d}"
+    daily_data = data_dict['daily_status']
+    current_date = data_dict['test positivity'][1]
+    current_rate  = data_dict['test positivity'][2]
+    cumulative_status_data = data_dict['cumulative_status']
+    best_states_tpm, worst_states_tpm = get_tpm_state_comparison(data_dict['tpm_cpm_table_data'])
+    best_states_cpm, worst_states_cpm = get_cpm_state_comparison(data_dict['tpm_cpm_table_data'])
+    best_states_death_rate, worst_states_death_rate = get_fatality_rate_state_comparison(data_dict['fatality'][1])
+    best_states_test_positive, worst_states_test_positive = get_test_per_positive_state_comparison(data_dict['fatality'][1])
 
-	test_positivity = "The test positivity rate as per dd-mm-yyyy is x%. This shows that India should (increase/decrease) the number of tests."
+    confirmed_toast = dbc.Toast(
+                [get_status_toast(daily_data['Daily Confirmed'].values[0], cumulative_status_data['Total Confirmed'])],
+                header="Confirmed",className="toast_status_style",
+                header_style = {
+                "padding":"20px",
+                "display": "flow-root",
+                },
+                style={"background-color": "#ff9980"}
+            )
+    recovered_toast = dbc.Toast(
+                [get_status_toast(daily_data['Daily Recovered'].values[0], cumulative_status_data['Total Recovered'])],
+                header="Recovered",className="toast_status_style",
+                header_style = {
+                "padding":"20px",
+                "display": "flow-root",
+                },
+                style={"background-color": "#8dd88d"}
+            )
+    deceased_toast = dbc.Toast(
+                [get_status_toast(daily_data['Daily Deceased'].values[0], cumulative_status_data['Total Deceased'])],
+                header="Deceased",className="toast_status_style",
+                header_style = {
+                "padding":"20px",
+                "display": "flow-root",
+                },
+                style={"background-color": "#999999"}
+            )
 
-	test_efficiency = "In terms of efficiency of tests, as per the latest data, x,y,z is fairly performing while a,b,c to take serious measures to increase the number of tests as early as possible."
+    test_positivity_toast = dbc.Toast(
+                [html.P([html.Span(
+                    html.Strong(current_rate), style={"font-size":"20px","padding-top":"15px"}),
+                    html.Br(),
+                    html.Span(current_date,style={"font-size":"10px","padding-top":"15px"}),
+                    ])],
+                header="Test Positivity Rate",className="toast_style",
+                header_style = {
+                "padding":"20px",
+                "display": "flow-root",
+                }
+            )
+    
+    tpm_toast = dbc.Toast(
+                    [get_critical_trends_toast("More Tests","Less Tests",best_states_tpm, worst_states_tpm)],
+                    header="Tests Per Million",className="toast_style",
+                    header_style = {
+                    "padding":"20px",
+                    "display": "flow-root",
+                    }
+                )
 
-	fatality_rate = "On the analysis of the fatality rate, states such as x.y,z are currently capable of reducing the number of deaths while a,b,c are falling behind increasing the risk."
-	
-	trends = html.Ul([
-         html.Li(html.Div(status,className="bullet_text_style",)),
-         html.Li(html.Div(test_positivity,className="bullet_text_style")),
-         html.Li(html.Div(test_efficiency,className="bullet_text_style")),
-         html.Li(html.Div(fatality_rate,className="bullet_text_style"))
-		])
+    cpm_toast = dbc.Toast(
+                    [get_critical_trends_toast("Less Cases","More Cases",best_states_cpm, worst_states_cpm)],
+                    header="Cases Per Million",className="toast_style",
+                    header_style = {
+                    "padding":"20px",
+                    "display": "flow-root",
+                    }
+                )
 
-	return trends
+    fatality_toast = dbc.Toast(
+                    [get_critical_trends_toast("Low Fatality Rate","High Fatality Rate",best_states_death_rate, worst_states_death_rate)],
+                    header="Fatality Rate",className="toast_style",
+                    header_style = {
+                    "padding":"20px",
+                    "display": "flow-root",
+                    }
+                )
+    test_positive_toast = dbc.Toast(
+                    [get_critical_trends_toast("More Efficient Testing","Less Efficient Testing",best_states_test_positive, worst_states_test_positive)],
+                    header="Test Per Positive Case",className="toast_style",
+                    header_style = {
+                    "padding":"20px",
+                    "display": "flow-root",
+                    }
+                )
+
+    table = html.Div([
+        html.Div([
+        dbc.Row([
+        dbc.Col(confirmed_toast),
+        dbc.Col(recovered_toast),
+        dbc.Col(deceased_toast)]),],style={"padding-left":"10px"}),
+
+        html.Div([
+        dbc.Row([
+        dbc.Col(cpm_toast, className="col-6 d-flex justify-content-center"),
+        dbc.Col(tpm_toast, className="col-6 d-flex justify-content-center"),
+        ])],style={"padding":"20px","align":"center"}),
+
+        html.Div([
+        dbc.Row([
+        dbc.Col(fatality_toast, className="col-6 d-flex justify-content-center"),
+        dbc.Col(test_positive_toast, className="col-6 d-flex justify-content-center")
+        ])],style={"padding":"20px","align":"center"}),
+
+        ])
+
+    return table
 
 radioitems = dbc.FormGroup(
     [
@@ -427,13 +661,13 @@ inputs = html.Div(
     ]
 )
 
-
 @app.callback(
     Output("radio-items", "children"),
     [
         Input("radioitems-input", "value"),
     ],
 )
+
 def on_form_change(value):
     state_wise_data = data_set['state_wise_data']
     data = state_wise_data.drop(state_wise_data[state_wise_data['State_code'].isin(['TT','UN'])==True].index)
@@ -456,61 +690,85 @@ def on_form_change(value):
 		        'displayModeBar': True
 		    })
 
-sidebar_header = dbc.Row(
-    [
-        dbc.Col(html.H2("Explore", className="display-4",style={"text-decoration": "underline"})),
-    ]
-)
+# sidebar_header = dbc.Row(
+#     [
+#         dbc.Col(html.H2("Explore", className="display-4",style={"text-decoration": "underline"})),
+#     ]
+# )
 
-sidebar = html.Div(
-    children=[
-    html.Div([
-        sidebar_header,
-        #html.Hr(),
-        # dbc.Collapse(
+navbar = html.Div([
         dbc.Nav(
-            [
-                dbc.NavLink("Covid Status", href="#covid-status", id="covid-status-link",external_link=True),
-                dbc.NavLink("State Wise Overview", href="#state-overview", id="death-rate-link",external_link=True),
-                dbc.NavLink("Test Positivity", href="#test-positivity", id="test-positivity-link",external_link=True),
-                dbc.NavLink("Test Efficiency", href="#tpm-cpm", id="tpm-cpm-link",external_link=True),
-                dbc.NavLink("Fatality Rate", href="#fatality", id="fatality-link",external_link=True),
-                dbc.NavLink("Critical Trends", href="#critical_trends", id="critical-trends-link",external_link=True),
-                
+            [   dbc.NavLink("Critical Trends", href="#critical_trends", id="critical-trends-link",external_link=True,className="link_style"),
+                dbc.NavLink("Covid Status", href="#covid-status", id="covid-status-link",external_link=True,className="link_style"),
+                dbc.NavLink("State Wise Overview", href="/state_view", id="death-rate-link",external_link=True,className="link_style"),
+                dbc.NavLink("Test Positivity", href="#test-positivity", id="test-positivity-link",external_link=True,className="link_style"),
+                dbc.NavLink("Test Efficiency", href="#tpm-cpm", id="tpm-cpm-link",external_link=True,className="link_style"),
+                dbc.NavLink("Fatality Rate", href="#fatality", id="fatality-link",external_link=True,className="link_style"),
+                dbc.NavLink("About",href="/about", id="about-link",external_link=True,className="link_style")
             ],
-            vertical=True,
-            pills=True,
-            style={"font-size":"18px"},
+            horizontal=False,
+            fill = True,
+            className = "link-style"
             
         ),
-        # )
-        ],className="sidebar-toggle",
+        ],style={"display": "flex","justify-content": "center","align-content": "stretch"}
         )
-    ],id="sidebar",
 
+about = html.Div([
+    html.H1('About'),
+    html.Div(id='page-2-content'),
+    html.Br(),
+    html.Div([
+        html.P("The main objective of this site is to provide analytical picture of India's battle against Covid in a very simple manner. Various parameters chosen here is to measure the impact of the pandemic in the best possible way.")]),
+        html.P("The raw data is obtained from https://www.covid19india.org/."),
+        html.P("References: https://ourworldindata.org/, https://www.thehindu.com/"),
+        html.P("Send your feedback to covid19analyticsindia@gmail.com"),
+        dcc.Link('Go to dashboard', href = "/")
+],style={"text-align": "center","justify-content":"center"},id="about")
+
+# Update the index
+@app.callback(dash.dependencies.Output('page-content', 'children'),
+              [dash.dependencies.Input('url', 'pathname')])
+def display_page(pathname):
+    if pathname == '/about':
+        return about
+    elif pathname == '/state_view':
+        return state_content
+    else:
+        return index_page
+
+nav_header = dbc.Navbar(
+    [
+        dbc.Row([
+            dbc.Col(html.Strong("Covid In India",),className="nav_header", width=12),
+            dbc.Col(navbar)
+            ], className = "nav_row_style")
+    ],
+    color="#6c757d",
+    fixed="top",
 )
 
 content = html.Div([
-    	
-    	#html.Div(nav),
-    	html.Button(
-                    # use the Bootstrap navbar-toggler classes to style
-                    html.Span(className="navbar-toggler-icon"),
-                    className="sidebar-toggle sidebar-button",
-                    id="toggle-sidebar"
-                ),
     	html.Div([
 	    dbc.Alert([html.B([
-	    	html.P([html.P("Someone is dying in every",),
-	    		html.P([html.Span(alert.get_death_rate(data_set),style={"font-size":"30px","font-family": "Catamaran","padding-left":"5px","padding-right":"5px"}),]),
-	    		html.P(["in ", html.Span("India!",style={"font-size":"25px","font-family": "Catamaran","padding-left":"5px",}),]),
+	    	html.P([html.Span("Someone is dying in every",),
+	    		html.Span([html.Span(alert.get_death_rate(data_set),style={"font-size":"30px","font-family": "Catamaran","padding-left":"5px","padding-right":"5px"}),]),
+	    		html.Span(["in ", html.Span("India!",style={"font-size":"25px","font-family": "Catamaran","padding-left":"5px",}),]),
 	    		]),
 	    	],className="text-danger",style={"font-size":"25px","font-family": "Catamaran"}),], color="danger",
 	    className="p-5 text-center",style={"font-size":"large","border-radius": "7px"}),
 	    html.Div(get_current_status_card(data_set),id="status",),
 	    html.Div([html.P(html.Strong("An outbreak anywhere can go everywhere. We all need to pitch in to try to prevent cases both within ourselves and in our communities.",className="text_style",style={"padding-bottom":"5px","padding-top":"10px"}),style={"text-align": "center","padding-top":"10px"}),
-        html.P("Flattening the curve is a public health strategy to slow down the spread of the SARS-CoV-2 virus during the COVID-19 pandemic. when virus spread goes up in an exponential way, at one point it exceeds the capacity of total health infrastructure can handle. it leads to failure of health care system of the nation.If individuals and communities take steps to slow the virus’s spread, that means the number of cases of COVID-19 will stretch out across a longer period of time.The number of cases at any given time doesn’t cross the  capacity of the our nation’s health care system to help everyone who’s very sick.Social distancing, wearing maks and washing hands can prevent the failure of health infrastructure",className="text_style")],
+        html.P("Flattening the curve is a public health strategy to slow down the spread of the SARS-CoV-2 virus during the COVID-19 pandemic. When virus spread goes up in an exponential way, at one point it exceeds the capacity which total health infrastructure can handle. It leads to failure of health care system of the nation. If individuals and communities take steps to slow the virus’s spread, that means the number of cases of COVID-19 will stretch out across a longer period of time. So that we can keep the number of cases at any given time doesn’t cross the  capacity of the our nation’s health care system to help everyone who’s very sick. Social distancing, wearing maks and washing hands are some effective ways to prevent the spred of the pandemic.",className="text_style")],
         className="pretty_container"),
+
+        html.Div([
+            html.H2("Critical Trends", className="heading_style"),
+            html.Div([get_critical_trends(data_set)]),
+            html.Div("Scroll on to know each factor in detail!!!",
+                style={"font-size":"20px","padding":"20px","font-weight": "bold","font-style": "italic"})
+            ],className="pretty_container",id="critical_trends"),
+
 	   	html.Div([
 	   		 dbc.Card(
         [
@@ -525,7 +783,10 @@ content = html.Div([
 					        'displaylogo': False,
 					        'displayModeBar': True
 					    }),
-	   	html.Div([html.P("The goal of every nation is to flatten the covid curve by reducing the number of cases and finally reaching to zero. This plot depicts how India responds to covid day by day. The cumulative number of covid cases is plotted against the day since the first covid case reported on January 30, 2020. It also shows the total number of recovered and deceased till today."),
+	   	html.Div([html.P([
+            html.Span("The goal of every nation is to "),
+            html.Span(html.B("flatten the covid curve ")),
+            html.Span("by reducing the number of active cases and finally reaching to zero. This plot depicts how India responds to covid day by day. The cumulative number of covid cases is plotted against the day since the first covid case reported on January 30, 2020. It also shows the total number of recovered and deceased till today.")]),
 	   	 html.P("This also indicates how the covid cases are rapidly increasing after each unlock phase. Here comes the question, whether the lockdown was really efficient in containing the pandemic?"),
 	   	 html.P("One thing to be noted is the number of confirmed cases is lower than the actual cases due to limited testing. Also, the reported cases on a date may not necessarily be the actual number of cases on that day due to delayed reporting.")]
 	   		,className="text_style")]
@@ -535,10 +796,6 @@ content = html.Div([
     ],
     )
 	   ],id="covid-status"),
-
-	   	# html.Div([
-	   	# html.Div([inputs]),
-     #    html.Div(id="radio-items"),],className="pretty_container"),
 
         html.Div([
 	   		
@@ -551,15 +808,16 @@ content = html.Div([
 	            dbc.Col(html.Div(html.P("The purpose of this graph is to give a picture of the states affected by covid. This helps to gauge each state in terms of confirmed cases, active cases, and deaths. ")
         		,className="text_style"),)
 	            ),
-               	dbc.Row(
-	   			dbc.Col(html.Div([inputs]),className="center-container")
+               	dbc.Row([
+	   			dbc.Col(html.Div([inputs]),className="center-container",width=10),
+                dbc.Col(html.Div(dbc.NavLink("Click Here to Know More on States",href="/state_view", id="state_link",external_link=True,className="link_style"),
+                        style={"background-color": "#d62d3d"},className="nav_button ml-auto flex-nowrap mt-3 mt-md-0"))
+                ]
 	   			),
 	            dbc.Row(
-	            dbc.Col(html.Div(id="radio-items"),)
-	            ),
-
-            ]
-        ),
+	            dbc.Col(html.Div(id="radio-items"),),
+                )
+        ]),
     ],)
 	   		],id="state-overview"),
 
@@ -570,21 +828,27 @@ content = html.Div([
         dbc.CardHeader("Test Positivity",style={"font-size":"30px"}),
         dbc.CardBody(
             [
-               	dbc.Row([
-	   			dbc.Col(dcc.Graph(figure = get_tests_vs_positive_graph(data_set),
-	                              config={
-					        'modeBarButtons': [['toImage']],
-					        'displaylogo': False,
-					        'displayModeBar': True
-					    }),
-	            ),
-	            dbc.Col(html.Div([html.P("Is India performing adequate tests?"),
-	            	html.P("Since tests are the only means to identify covid cases, a country needs to perform tests on a maximum number of people, which would help to know the degree of spread in an area. In an ideal case, it should test all the people in the country. But this is not practical due to the limited testing facilities."),
-	            	html.P("The test positivity rate is a measure of the spread of the infectious virus in an area. It throws light on the size of the outbreak and the requirement to increase the tests. According to WHO, the test positivity rate should be lower than 10%, but better less than 3% as a benchmark for adequate testing. In other words, 10 - 30 tests per confirmed case indicates a fair level of testing."),
-	            	html.P("If the positivity rate does not fall within this benchmark, it indicates that the country is not performing adequate tests. And the reported positive cases are only a fraction of the actual cases."),
-	            	html.P("This graph shows the total number of cases, confirmed cases, and test positivity rate each day, for the past two weeks. India has a test positivity rate of x%.")]
-	   		,className="text_style"),className="center-container")
-	            ])
+            html.Div([html.P("Is India performing adequate tests?",style={"font-size":"25px"}),
+                    html.P("Since tests are the only means to identify covid cases, a country needs to perform tests on a maximum number of people, which would help to know the degree of spread in an area. In an ideal case, it should test all the people in the country. But this is not practical due to the limited testing facilities."),
+                    html.P([
+                        html.Span("The "),
+                        html.Span(html.B("test positivity rate")),
+                        html.Span(" is a measure of the spread of the infectious virus in an area. It throws light on the size of the outbreak and the requirement to increase the tests. "),
+                        html.Span(html.B("According to WHO, the test positivity rate should be lower than 10%, but better less than 3% as a benchmark for adequate testing")),
+                        html.Span(". In other words, 10 - 30 tests per confirmed case indicates a fair level of testing."),]),
+                    html.P("If the positivity rate does not fall within this benchmark, it indicates that the country is not performing adequate tests. And the reported positive cases are only a fraction of the actual cases."),
+                    html.P([html.Span("This graph shows the total number of cases, confirmed cases, and test positivity rate each day, for the past two weeks. India has a test positivity rate of "),
+                        html.Span(html.B(data_dict['test positivity'][2])),
+                        html.Span(html.B("%."))])]
+            ,className="text_style"),
+
+            html.Div(
+                dcc.Graph(figure = get_tests_vs_positive_graph(data_set),
+                                  config={
+                            'modeBarButtons': [['toImage']],
+                            'displaylogo': False,
+                            'displayModeBar': True
+                        }),style={"justify-content":"center"}),
             ]
         ),
     ],)
@@ -598,8 +862,14 @@ content = html.Div([
         dbc.CardHeader("Test Efficiency",style={"font-size":"30px"}),
         dbc.CardBody(
             [
-               	dbc.Row(dbc.Col(html.Div([html.P("Why testing is very much essential? As we all know, in the current scenario where exact methods to tackle the pandemic are still uncertain and the whole world is trying hard to get a medicine for the same, the only way to contain the virus is by testing extensively to track the infectious people. In that light, Test per million and Case per million would give us an idea about the spread of the virus. "),
-               		html.P("The graph shows the tests per million(vertical axis) v/s cases per million(horizontal axis) for different states daily from April 17, 2020. Steeper the line in the upward direction, testing in those states is relatively higher than the confirmed cases, which is the desirable condition. Otherwise, it shows that the testing is insufficient in those states, and the number of actual cases in those states might be far higher."),
+               	dbc.Row(dbc.Col(html.Div([html.P("Why testing is very much essential?",style={"font-size":"25px"}),
+                    html.P([
+                        html.Span("As we all know, in the current scenario where exact methods to tackle the pandemic are still uncertain and the whole world is trying hard to get a medicine for the same, the only way to contain the virus is by testing extensively to track the infectious people and trace their contacts. In that light, Tests per million and Cases per million would give us an idea about the spread of the virus. "),
+                        html.Span(html.B("Measuring a region’s testing rate in comparison to its outbreak size will help identify those which are not testing enough. "))]),
+               		html.P([
+                        html.Span("The graph shows the tests per million(vertical axis) v/s cases per million(horizontal axis) for different states daily from April 17, 2020. "),
+                        html.Span(html.B("Steeper the line in the upward direction, testing in those states is relatively higher than the confirmed cases, which is the desirable condition. ")),
+                        html.Span("Otherwise, it shows that the testing is insufficient in those states, and the number of actual cases in those states might be far higher than reported.")]),
                		html.P("The table gives the present tests per million and cases per million of each state.")]
 	   		,className="text_style"))),
 	   		dbc.Row([
@@ -609,157 +879,102 @@ content = html.Div([
             ]
         ),
     ],)], id="tpm-cpm",),
-	        
 
-	   #  html.Div( dbc.Card(
-    #     [
-    #     dbc.CardHeader("Death Rate",style={"font-size":"30px"}),
-    #     dbc.CardBody(
-    #         [
-    #            	dbc.Row([
-	   # 			dbc.Col(dcc.Graph(figure = get_death_rate_graph(data_set),
-	   #                            config={'displayModeBar': False}),
-	   # 			),
-	   #          dbc.Col(html.Div(html.P("Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
-	   # 		,className="text_style"),className="center-container", width="40%")
-	   #          ])
-    #         ]
-    #     ),
-    # ],),id="death-rate",className="pretty_container"),
-	    
-	    html.Div([
-	    	html.H2("Fatality Rate",className="heading_style"),
-	    	html.Div([html.P("How crucial is the pandemic? To understand the risk and to timely respond, we would also need to get the mortality rate. This parameter depicts the fact that how likely someone who catches the disease would die. This is measured by taking the ratio of total confirmed deaths by the total confirmed cases. But during the pandemic, it would be really difficult to analyze the risk of the pandemic by looking at the fatality rate, since the data might be incomplete. Here, the plot compares various states on the fatality rate. States like xxx, being at the top."),
-	    		html.P("Test per positive case is a measure of how effectively testing is done in a state. The lower the number, testing is more efficient and extensive in those states. States like XXXX are performing well while YYYYare falling behind.")]
-	    		,className="text_style"),
-	    	html.Div(get_fatality_graph(data_set)),
-	    	],
-	    	className="pretty_container",id="fatality"),
-
-	    html.Div([
-            html.H2("Critical Trends", className="heading_style"),
-            html.Div(get_critical_trends(data_set))
-        	],className="pretty_container",id="critical_trends")
-	    
-	    ],id="content",className="container")])
-
-@app.callback(
-    Output("sidebar", "className"),
-    [Input("toggle-sidebar", "n_clicks")],
-    [State("sidebar", "className")],
-)
-def toggle_classname(n, classname):
-    if n and classname == "":
-        return "collapsed active"
-    return ""
-
-navbar = dbc.NavbarSimple(
-    children=[
-        dbc.NavItem(dbc.NavLink("Page 1", href="#")),
-        dbc.DropdownMenu(
-            children=[
-                dbc.DropdownMenuItem("More pages", header=True),
-                dbc.DropdownMenuItem("Page 2", href="#"),
-                dbc.DropdownMenuItem("Page 3", href="#"),
-            ],
-            nav=True,
-            in_navbar=True,
-            label="More",
-        ),
-    ],
-    brand="Covid In India",
-    brand_href="#",
-    color="#8c8c8c",
-    fixed="top",
-    dark=True,
-)
-
-nav_header = dbc.Navbar(
-    [
-        html.A(
-            # Use row and col to control vertical alignment of logo / brand
-            dbc.Row(
-                [
-                    #dbc.Col(html.Img(src=PLOTLY_LOGO, height="30px")),
-                    dbc.Col(dbc.NavbarBrand("Covid In India", className="ml-2",style={"font-size":"30px"})),
-                ],
-                align="center",
-                no_gutters=True,
-            ),
-            href="/home",
-        ),
-        #dbc.NavItem(dbc.NavLink("Page 1", href="#fatality")),
-        # dbc.NavbarToggler(id="navbar-toggler"),
-        # dbc.Collapse(children=[dbc.NavItem(dbc.NavLink("Page 1", href="#fatality")),],id="navbar-collapse", navbar=True),
-    ],
-    color="#d9d9d9",
-    fixed="top",
-    #dark=True,
-)
-
-nav_footer = dbc.Navbar(
-    [
         html.Div([
-		html.P("Send your feedback to covidindiadash@gmail.com",),
-		html.P("Disclaimer: The information provided by this site is solely based on the data from https://www.covid19india.org/.",
-			)
-		],className="footer"),
-	],
-    # color="#d9d9d9",
-    sticky ="bottom",
-    #dark=True,
-)
+
+            dbc.Card(
+        [
+        dbc.CardHeader("Fatality Rate",style={"font-size":"30px"}),
+        dbc.CardBody(
+            [
+                dbc.Row([
+            dbc.Col(html.Div(
+                [html.P("How crucial is the pandemic?",style={"font-size":"25px"}),
+                html.P([
+                    html.Span("To understand the risk and to timely respond, we would also need to get the fatality rate. "),
+                    html.Span(html.B("Fatality Rate depicts the fact that how likely someone who catches the disease would die. ")),
+                    html.Span("Comparing the COVID-19 case curves of different states is the most widely used tool to measure the effectiveness of a particular state’s response to the pandemic. However, as the rate of testing differs widely across states, case curves may not be a sufficient tool. The fatality rate may present a better picture. This is measured by taking the ratio of total confirmed deaths by the total confirmed cases. But during the pandemic, it would be really difficult to analyze the risk of the pandemic by looking at the fatality rate, since the data might be incomplete. Here, the plot compares various states on the fatality rate.")]),
+                html.P(html.B("Test per positive case is a measure of how effectively testing is done in a state. The higher the number, testing is more efficient and extensive in those states."))]
+                ,className="text_style")
+               ),
+            ]),
+                dbc.Row(dbc.Col(get_fatality_graph(data_set))),
+            
+            ]
+        ),
+    ],)], id="fatality",),
+	    
+	    ],id="content")])
 
 footer = html.Footer([
 	html.Div([
-		html.P("Send your feedback to covidindiadash@gmail.com",),
+		html.P([html.Span("Send your feedback to "),
+            html.Strong("covid19analyticsindia@gmail.com")]),
 		html.P("Disclaimer: The information provided by this site is solely based on the data from https://www.covid19india.org/.",
-			)
+			),
+        html.P(html.P(dbc.NavLink("About",href="/about", id="about_link",external_link=True,className="link_style"),className="nav_button",style={"display": "inline-block"}),
+            style={"background-color": "#404040", "padding": "10px"})
 		],className="footer"),
 	])
 
-# @app.callback(
-#     Output("navbar-collapse", "is_open"),
-#     [Input("navbar-toggler", "n_clicks")],
-#     [State("navbar-collapse", "is_open")],
-# )
-# def toggle_navbar_collapse(n, is_open):
-#     if n:
-#         return not is_open
-#     return is_open
+#################################################################################################
 
-# @app.callback(
-#     Output("collapse", "is_open"),
-#     [Input("navbar-toggle", "n_clicks")],
-#     [State("collapse", "is_open")],
-# )
-# def toggle_collapse(n, is_open):
-#     if n:
-#         return not is_open
-#     return is_open
+#State Page
 
-final_body = html.Div([
-	    dcc.Location(id='url', refresh=True),
-		#html.Div(nav),
-		html.Div(nav_header),
-		sidebar,
-    	content,
-],className="wrapper",
-)
+def get_state_list():
+    state_code_list = utility.get_state_code_list(data_set)
+    state_list = state_code_list.drop(state_code_list[state_code_list['State'].isin(['State Unassigned'])==True].index)
+    state_list.sort_values(by=['State'],inplace=True)
+    return state_list
+
+def get_tpm_cpm_values(state):
+    tpm_cpm_data = data_dict['tpm_cpm_table_data']
+    tpm_state = tpm_cpm_data[tpm_cpm_data['State']== state]['Tests Per Million'].values[0]
+    cpm_state = tpm_cpm_data[tpm_cpm_data['State']== state]['Cases Per Million'].values[0]
+    return tpm_state, cpm_state
+
+def get_fatality_test_positivity_data(state):
+    data = data_dict['fatality'][1]
+    fatality_state = data[data['State']== state]['Fatality Rate'].values[0]
+    test_per_positive = data[data['State']== state]['Test Per Positive Case'].values[0]
+    return fatality_state, test_per_positive
+
+state_content = html.Div([
+    dcc.Dropdown(
+        id='dropdown',
+        options=[{"label": state, "value": state} for state in get_state_list()['State']],
+        value='Delhi'
+    ),
+    html.Div(id='dd-output-container')
+])
+
+
+@app.callback(
+    dash.dependencies.Output('dd-output-container', 'children'),
+    [dash.dependencies.Input('dropdown', 'value')])
+def update_output(state):
+    data_dict['tpm_cpm_values'] = get_tpm_cpm_values(state)
+    data_dict['fatality_test_positivity_values'] = get_fatality_test_positivity_data(state)
+    return state_layout.get_state_layout(data_set, state, data_dict)
+
+#################################################################################################
+index_page = html.Div([
+    nav_header,
+    html.Div(content,style={"padding-top": "100px"}),
+    footer])
 
 app.layout = html.Div([
-	final_body,
-	footer
+	    dcc.Location(id='url', refresh=True),
+        html.Div(id='page-content')
+],
+)
 
-	# dbc.Row(
-	# 	dbc.Col(final_body)
-	# 	),
-	# dbc.Row(
-	# 	dbc.Col(html.Div(nav_footer))
-	# 	)
-	
-	])
+@sched.scheduled_job('cron', day_of_week='mon-sun', hour=6)
+def scheduled_job():
 
+    print('This job is run every weekday at 5pm.')
+    get_data()
+sched.start()
 
 if __name__ == '__main__':
     app.run_server(debug=True)
