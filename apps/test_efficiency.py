@@ -23,15 +23,18 @@ def get_state_population(group_data,data_set):
 		population_dict[i] = statewise_tested_numbers_data[statewise_tested_numbers_data['State']==i]['Population NCP 2019 Projection'].values[0]
 	return population_dict
 
-def get_tpm_cpm_table(group_data, population_dict):
+def get_tpm_cpm_table(group_data, population_dict, data_set):
+    state_wise_data = data_set['state_wise_data']
+    data = state_wise_data.drop(state_wise_data[state_wise_data['State_code'].isin(['TT','UN'])==True].index)
+    confirmed_data = state_wise_data.sort_values(by=['State'],ascending=False)
     table_data = {'State': {},
-                  'Test Per Million':{},
-                  'Case Per Million':{}
+                  'Tests Per Million':{},
+                  'Cases Per Million':{}
            }
     data_table = pd.DataFrame(table_data) 
     for i in group_data.groups.keys():
         row = [i,round(group_data.get_group(i)['Total Tested']/(population_dict[i]/1000000)).tail(1).values[0],
-          round(group_data.get_group(i)['Positive']/(population_dict[i]/1000000)).tail(1).values[0]]
+          round(confirmed_data[confirmed_data['State'] == i]['Confirmed'].values[0]/(population_dict[i]/1000000))]
         data_table.loc[len(data_table)] = row
     return data_table
 

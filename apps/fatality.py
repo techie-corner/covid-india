@@ -1,6 +1,7 @@
 #utility functions for fatality graph component
 
 import pandas as pd
+import numpy as np
 
 from datetime import date 
 from datetime import datetime
@@ -22,6 +23,10 @@ def get_test_per_positive_data(data_set):
     return test_per_positive_data
 
 def get_fatality_state_wise_data(data_set,state_code_list):
+    state_wise_data = data_set['state_wise_data']
+    data = state_wise_data.drop(state_wise_data[state_wise_data['State_code'].isin(['TT','UN'])==True].index)
+    confirmed_data = state_wise_data.sort_values(by=['State'],ascending=False).fillna(0)
+
     table_data = {
         'State':{},
         'Fatality Rate':{},
@@ -40,7 +45,11 @@ def get_fatality_state_wise_data(data_set,state_code_list):
         state_code = state_code_list[state_code_list['State']==i]['State_code'].values[0]
         fatality_rate = ((cum_deceased_data[state_code]/cum_confirmed_data[state_code])*100).tail(30)
         #table population
-        test_per_confirmed_latest = test_per_confirmed[test_per_confirmed['Updated On']==previous_day]['Test Positivity']
+        #test_per_confirmed_latest = test_per_confirmed[test_per_confirmed['Updated On']==previous_day]['Test Positivity']
+        if confirmed_data[confirmed_data['State'] == i]['Confirmed'].values[0] == 0 or np.isnan(test_per_positive_data.get_group(i)['Total Tested'].tail(1).values[0]):
+            test_per_confirmed_latest = None
+        else:
+            test_per_confirmed_latest = round(test_per_positive_data.get_group(i)['Total Tested'].tail(1).values[0]/confirmed_data[confirmed_data['State'] == i]['Confirmed'].values[0])
         fatality_rate_latest = round(fatality_rate.tail(1).values[0],2)
         row = [i,fatality_rate_latest,test_per_confirmed_latest]
         data_table.loc[len(data_table)] = row
