@@ -208,7 +208,21 @@ def get_state_test_positivity(state):
             t=100,
             pad=10),
          hovermode="x unified",
+        yaxis2 = dict(
+            titlefont=dict(
+                color="#ffbf00"
+            ),
+            tickfont=dict(
+                color="#ffbf00"
+            ),
+            tickformat = '%',
+            anchor="x",
+            overlaying="y",
+            side="right"
+        ),
         )
+    fig.update_yaxes(title_text="Number of tests", secondary_y=False)
+    fig.update_yaxes(title_text="Positivity Rate", secondary_y=True)
 
     return fig
 
@@ -323,7 +337,7 @@ def get_state_layout(data, state, data_dict):
     global data_set
     data_set = data
     data_set['state_test_positivity'] = test_positivity.get_state_positivity_data(data_set, state)
-    content = html.Div([nav_header,
+    content = html.Div([
             html.Div([
             # dbc.Alert([html.B([
             #     html.P([html.Span("Someone is dying in every",),
@@ -358,7 +372,7 @@ def get_state_layout(data, state, data_dict):
                         dbc.Card(
                 [
                 dbc.CardHeader("Test Positivity Rate",className="text-center",style={"background-color":"#ffb3b3","font-weight":"bold"}),
-                dbc.CardBody("{}%".format(data_set['state_test_positivity'][2].values[0])
+                dbc.CardBody("{}%".format(round(data_set['state_test_positivity'][2].values[0]*100),2)
                     , className="card-text text-center",style={"display": "flex","align-items": "center",
     "justify-content": "center","background-color":"black","color":"white","border-radius": "0px 0px 20px 20px","font-weight":"bold"} 
                 ),
