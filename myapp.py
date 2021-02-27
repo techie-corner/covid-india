@@ -139,13 +139,13 @@ def get_covid_status_graph():
     fig.layout.xaxis.zeroline = False
     fig.layout.yaxis.zeroline = False
     #Total Confirmed cases
-    fig.add_trace(go.Scatter(x=case_time_series_data.Date, y=case_time_series_data["Total Confirmed"],
+    fig.add_trace(go.Scatter(x=case_time_series_data.Date_YMD, y=case_time_series_data["Total Confirmed"],
                     mode='lines',
                     line_color='#e60000',
                     name='Total Confirmed'))
 
     #Total Active cases
-    fig.add_trace(go.Scatter(x=case_time_series_data.Date, y=case_time_series_data["Total Recovered"] + case_time_series_data["Total Deceased"],
+    fig.add_trace(go.Scatter(x=case_time_series_data.Date_YMD, y=case_time_series_data["Total Recovered"] + case_time_series_data["Total Deceased"],
                     mode='lines',
                     fill='tonexty',
                     name='Total Active',
@@ -155,13 +155,13 @@ def get_covid_status_graph():
                     line_color='#993300'))
 
     #Total Recovered cases
-    fig.add_trace(go.Scatter(x=case_time_series_data.Date, y=case_time_series_data["Total Recovered"],
+    fig.add_trace(go.Scatter(x=case_time_series_data.Date_YMD, y=case_time_series_data["Total Recovered"],
                     mode='lines',
                     name='Total Recovered',
                     line_color='yellowgreen'))
 
     #Total Deaths
-    fig.add_trace(go.Scatter(x=case_time_series_data.Date, y=case_time_series_data["Total Deceased"],
+    fig.add_trace(go.Scatter(x=case_time_series_data.Date_YMD, y=case_time_series_data["Total Deceased"],
                     mode='lines',
                     fill='tozeroy',
                     name='Total Deceased',
@@ -169,7 +169,7 @@ def get_covid_status_graph():
                     line_color='rosybrown'))
 
     fig.add_trace(go.Scatter(
-    x=["25 March ", "25 March "],
+    x=["2020-03-25", "2020-03-25"],
     y=[case_time_series_data["Total Confirmed"].max(),0],
     mode="lines+text",
     name="Lockdown starts",
@@ -181,7 +181,7 @@ def get_covid_status_graph():
     ))
 
     fig.add_trace(go.Scatter(
-    x=["01 June ", "01 June "],
+    x=["2020-06-01", "2020-06-01"],
     y=[case_time_series_data["Total Confirmed"].max(),0],
     mode="lines+text",
     name="Unlock 1.0",
@@ -193,7 +193,7 @@ def get_covid_status_graph():
     ))
 
     fig.add_trace(go.Scatter(
-    x=["01 July ", "01 July "],
+    x=["2020-07-01", "2020-07-01"],
     y=[case_time_series_data["Total Confirmed"].max(),0],
     mode="lines+text",
     name="Unlock 2.0",
@@ -205,7 +205,7 @@ def get_covid_status_graph():
     ))
 
     fig.add_trace(go.Scatter(
-    x=["01 August ", "01 August "],
+    x=["2020-08-01", "2020-08-01"],
     y=[case_time_series_data["Total Confirmed"].max(),0],
     mode="lines+text",
     name="Unlock 3.0",
@@ -217,7 +217,7 @@ def get_covid_status_graph():
     ))
 
     fig.add_trace(go.Scatter(
-    x=["01 September ", "01 September "],
+    x=["2020-09-01", "2020-09-01"],
     y=[case_time_series_data["Total Confirmed"].max(),0],
     mode="lines+text",
     name="Unlock 4.0",
@@ -230,7 +230,7 @@ def get_covid_status_graph():
     fig.update_layout(
     # paper_bgcolor='rgba(0,0,0,0)',
     # plot_bgcolor='rgba(0,0,0,0)',
-    xaxis={"fixedrange": True},
+    #xaxis={"fixedrange": True},
     title={
             'text': "Covid Curve in India",
             'y':0.9,
