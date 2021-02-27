@@ -8,7 +8,7 @@ from apps import utility
 
 data_set = []
 daily_confirmed_index = 2
-daily_tests_index = 8
+daily_tests_index = 9
 
 def get_tests_vs_positive_data(data_set):
     case_time_series_data = data_set['case_time_series_data']
@@ -19,11 +19,15 @@ def get_tests_vs_positive_data(data_set):
     no_of_tests = []
     counter = 0
     null_values = ['Nan', 'NaN', 'nan']
+    sample_daily_test_data.fillna(0);
+    sample_case_data.fillna(0);
     for index, row in sample_case_data.iterrows():
         no_of_tests.append(sample_daily_test_data.values[counter][daily_tests_index])
+        # print(sample_case_data.values[counter][daily_confirmed_index])
+        # print(sample_daily_test_data.values[counter][daily_tests_index])
         if sample_daily_test_data.values[counter][daily_tests_index] not in null_values:
-            positivity_rate.append(round((sample_case_data.values[counter][daily_confirmed_index]/int(sample_daily_test_data.values[counter][daily_tests_index])),5))
-            print(positivity_rate[counter])
+            positivity_rate.append(round((sample_case_data.values[counter][daily_confirmed_index]/int(sample_daily_test_data.values[counter][daily_tests_index]))*100,5))
+            # print(positivity_rate[counter])
         counter += 1
     graph_data = {'Date': sample_case_data['Date'],
         'Number Of Tests': no_of_tests,
@@ -48,7 +52,7 @@ def get_state_positivity_data(data_set, state):
     state_wise_confirmed_data = state_wise_daily_data[state_wise_daily_data['Status'] == 'Confirmed']
     state_wise_confirmed_data = state_wise_confirmed_data[['Date',state_code]].tail(14).reset_index(drop=True)
 
-    positivity_rate = round((state_wise_confirmed_data[state_code]/tests_data),2)
+    positivity_rate = round((state_wise_confirmed_data[state_code]/tests_data)*100,2)
 
     table = {
         "Date": state_wise_confirmed_data['Date'],

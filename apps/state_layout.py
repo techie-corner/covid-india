@@ -215,7 +215,7 @@ def get_state_test_positivity(state):
             tickfont=dict(
                 color="#ffbf00"
             ),
-            tickformat = '%',
+            #tickformat = '%',
             anchor="x",
             overlaying="y",
             side="right"
