@@ -1,5 +1,6 @@
 #utility methods for test positivity component
 import pandas as pd
+import math
 
 from datetime import date 
 from datetime import datetime
@@ -25,8 +26,12 @@ def get_tests_vs_positive_data(data_set):
         no_of_tests.append(sample_daily_test_data.values[counter][daily_tests_index])
         # print(sample_case_data.values[counter][daily_confirmed_index])
         # print(sample_daily_test_data.values[counter][daily_tests_index])
-        if sample_daily_test_data.values[counter][daily_tests_index] not in null_values:
+        x = float(sample_daily_test_data.values[counter][daily_tests_index])
+        if not math.isnan(x):
+            print(sample_daily_test_data.values[counter][daily_tests_index])
             positivity_rate.append(round((sample_case_data.values[counter][daily_confirmed_index]/int(sample_daily_test_data.values[counter][daily_tests_index]))*100,5))
+        else:
+        	positivity_rate.append('nan')
             # print(positivity_rate[counter])
         counter += 1
     graph_data = {'Date': sample_case_data['Date'],

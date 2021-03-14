@@ -203,7 +203,7 @@ def get_national_overview(data_dict, data_set):
                             html.Span(". In other words, 10 - 30 tests per confirmed case indicates a fair level of testing."),]),
                         html.P("If the positivity rate does not fall within this benchmark, it indicates that the country is not performing adequate tests. And the reported positive cases are only a fraction of the actual cases."),
                         html.P([html.Span("This graph shows the total number of cases, confirmed cases, and test positivity rate each day, for the past two weeks. India has a test positivity rate of "),
-                            html.Span(html.B(round(data_dict['test positivity'][2]*100,2))),
+                            html.Span(html.B(data_dict['test positivity'][2])),
                             html.Span(html.B("% ")),
                             html.Span("on "),
                             html.Span(html.B(data_dict['test positivity'][1])),

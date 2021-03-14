@@ -372,7 +372,7 @@ def get_state_layout(data, state, data_dict):
                         dbc.Card(
                 [
                 dbc.CardHeader("Test Positivity Rate",className="text-center",style={"background-color":"#ffb3b3","font-weight":"bold"}),
-                dbc.CardBody("{}%".format(round(data_set['state_test_positivity'][2].values[0]*100),2)
+                dbc.CardBody(data_set['state_test_positivity'][2].values[0]
                     , className="card-text text-center",style={"display": "flex","align-items": "center",
     "justify-content": "center","background-color":"black","color":"white","border-radius": "0px 0px 20px 20px","font-weight":"bold"} 
                 ),
